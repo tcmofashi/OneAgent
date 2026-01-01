@@ -1,0 +1,5 @@
+# Agent-specific MCP Configuration
+
+# [mcp.servers.sample_server]
+# command = "python"
+# args = ["-m", "mcp_server_sample"]

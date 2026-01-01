@@ -1,0 +1,7 @@
+# Global MCP Configuration
+# Define MCP servers that are available to the Orchestrator and potentially shared across agents.
+
+# Example:
+# [mcp.servers.filesystem]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/allowed_dir"]

@@ -1,0 +1,22 @@
+[core]
+workspace = "./workspace"
+
+[agent]
+name = "OneAgent-Instance"
+id = "uuid-or-unique-string"
+
+[llm]
+active_provider = "siliconflow"
+active_model_label = "deepseek-v3" # Change this to switch models
+
+[llm.providers.siliconflow]
+api_base = "https://api.siliconflow.cn/v1"
+api_key = "YOUR_API_KEY_HERE"
+
+[llm.providers.openai]
+api_base = "https://api.openai.com/v1"
+api_key = "YOUR_API_KEY_HERE"
+
+[llm.models]
+deepseek-v3 = { provider = "siliconflow", model_name = "deepseek-ai/DeepSeek-V3" }
+gpt-4o = { provider = "openai", model_name = "gpt-4o" }
