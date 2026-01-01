@@ -6,27 +6,8 @@ from src.core.registry import global_registry
 from src.capabilities.tools.todo_list import TodoListTool
 from src.core.capability import BaseAgent
 from src.core.compressor import global_compressor
+from src.core.templates import get_template
 
-SYSTEM_PROMPT_TEMPLATE = """You are the OneAgent Orchestrator, a powerful AI assistant capable of managing and executing complex tasks using a variety of tools.
-
-## Core Responsibilities
-1. **Task Planning**: At the beginning of a complex request, break it down into a clear, numbered Task List using the `update_task_list` tool.
-2. **Execution (ReAct)**: Execute tasks one by one.
-3. **State Management**: You MUST keep the Task List updated. When a step is done, call `update_task_list` to mark it as checked.
-
-## Current Task List
-{todo_list}
-
-## Format
-Use the following thought process for every step:
-- **Thought**: Analyze the current situation and the next task.
-- **Action**: Decide to call a tool or provide the final answer.
-
-## Instructions
-- Always review the Context and History before acting.
-- When calling tools, ensure arguments match the schema perfectly.
-- **CRITICAL**: If the "Current Task List" above is empty or outdated, your FIRST action should be to call `update_task_list`.
-"""
 
 class Orchestrator:
     def __init__(self):
@@ -41,10 +22,15 @@ class Orchestrator:
         print(f"\n[Orchestrator] Task List Updated:\n{self.todo_list}\n")
 
     def _get_system_prompt(self) -> str:
-        return SYSTEM_PROMPT_TEMPLATE.format(todo_list=self.todo_list)
+        template = get_template("ORCHESTRATOR_SYSTEM")
+        return template.format(
+            todo_list=self.todo_list,
+            capabilities_tree=global_registry.get_capabilities_tree_string()
+        )
 
     async def run(self, user_input: str):
         """
+        ReAct 循环的主入口点。
         Main entry point for the ReAct loop.
         """
         # Reset history for new run, or keep it? 
@@ -98,16 +84,21 @@ class Orchestrator:
                                     print(f"\n[Orchestrator] Intercepting Agent Call: {function_name}...")
                                     print(f"[Orchestrator] Running Context Compressor...")
                                     
+                                    # Get Upstream Tools (Orchestrator Capabilities)
+                                    # For simplicity, we use the global capabilities tree as "Upstream View"
+                                    upstream_view = global_registry.get_capabilities_tree_string()
+
                                     # Compress
                                     agent_desc = f"Name: {capability.name}\nDescription: {capability.description}"
                                     compression_result = await global_compressor.compress(
                                         history=self.history,
                                         target_task=instruction,
                                         agent_description=agent_desc,
-                                        orchestrator_plan=self.todo_list
+                                        orchestrator_plan=self.todo_list,
+                                        upstream_tools=upstream_view
                                     )
                                     
-                                    # Update args
+                                    # Update args (Injection)
                                     new_instruction = compression_result.get("core_request", instruction)
                                     compressed_context = compression_result.get("compressed_context", "")
                                     
@@ -119,10 +110,25 @@ class Orchestrator:
                                     print(f"Agent: {function_name}")
                                     print(f"Instruction (Refined): {new_instruction}")
                                     print(f"Context (Compressed): {compressed_context}")
+                                    print(f"Upstream Tools Revealed: YES (Size: {len(upstream_view)} chars)")
                                     print(f"{'='*60}\n")
                             # ------------------------------------
 
                             result = await capability.execute(**function_args)
+                            
+                            # --- Handle Protocol Status ---
+                            # Agents should return a status string like "[STATUS] Result..."
+                            # We parse this to handle INTERRUPTED
+                            if result.startswith("[INTERRUPTED]"):
+                                print(f"\n[Orchestrator] Agent {function_name} requested INTERRUPTED.")
+                                # In a real implementation, we would parse the specific request from 'result'
+                                # E.g., "Requesting tool: get_system_info"
+                                # For now, we treat it as a signal to plan for the requested tool in the NEXT turn.
+                                # But to be effective, we should execute it NOW and re-invoke?
+                                # Simplified approach: Return the interruption to the LLM so it can decide.
+                                # The LLM will see: "Tool get_system_info requested..." and then calls it.
+                                pass
+                            # ------------------------------
                         except Exception as e:
                             result = f"Error executing {function_name}: {str(e)}"
                     else:

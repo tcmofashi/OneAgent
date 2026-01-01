@@ -27,6 +27,7 @@ class LLMClient:
         model: Optional[str] = None
     ) -> Any:
         """
+        client.chat.completions.create 的包装器。
         Wrapper for client.chat.completions.create
         """
         # If no specific target label was set during init, we treat this as the "Global/Active" client

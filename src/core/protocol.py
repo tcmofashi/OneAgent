@@ -10,6 +10,6 @@ class AgentStatus(str, Enum):
 
 class ExecutionResult(BaseModel):
     status: AgentStatus
-    result: Any # The actual output or error message
-    reason: Optional[str] = None # For failure/rejection
-    mismatch_detail: Optional[str] = None # Specifically for REJECTED
+    result: Any # 实际输出或错误消息 / The actual output or error message
+    reason: Optional[str] = None # 失败/拒绝的原因 / For failure/rejection
+    mismatch_detail: Optional[str] = None # 专门针对 REJECTED 的详情 / Specifically for REJECTED

@@ -7,9 +7,11 @@ from src.utils.loader import load_capabilities
 async def main():
     print("Initializing OneAgent...")
     
+    # 1. 加载能力
     # 1. Load Capabilities
     load_capabilities()
     
+    # 2. 初始化 Orchestrator
     # 2. Initialize Orchestrator
     orchestrator = Orchestrator()
     

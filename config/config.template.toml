@@ -1,5 +1,6 @@
 [core]
 workspace = "./workspace"
+language = "en" # Options: "en", "zh"
 
 [agent]
 name = "OneAgent-Instance"

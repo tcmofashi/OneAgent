@@ -7,8 +7,11 @@ from src.core.registry import global_registry
 from src.core.capability import BaseAgent
 from src.capabilities.tools.system_info import SystemInfoTool
 
+from src.core.capability import BaseTool
+
 def load_capabilities():
     """
+    加载所有能力 (Agents, Tools) 到注册表。
     Load all capabilities (Agents, Tools) into the registry.
     """
     # 1. Register Global Shared Tools
@@ -20,7 +23,7 @@ def load_capabilities():
         print(f"[Loader] Agents root not found: {agents_root}")
         return
 
-    sys.path.append(str(agents_root.parent)) # Ensure capabilities package is importable if needed
+    sys.path.append(str(agents_root.parent)) # Ensure capabilities package is importable
 
     for agent_dir in agents_root.iterdir():
         if agent_dir.is_dir() and (agent_dir / "agent.py").exists():
@@ -35,8 +38,43 @@ def load_capabilities():
                         print(f"[Loader] Found Agent class: {name} in {agent_dir.name}")
                         agent_instance = obj()
                         
-                        # TODO: Load Scoped Tools from agent_dir/tools
-                        # TODO: Load Scoped MCP from agent_dir/mcp.toml
+                        # --- Load Scoped Tools ---
+                        tools_dir = agent_dir / "tools"
+                        if tools_dir.exists():
+                            # Add tools dir to path so we can import from it
+                            # sys.path.append(str(tools_dir)) # Optional if we use relative import
+                            for tool_file in tools_dir.glob("*.py"):
+                                if tool_file.name == "__init__.py": continue
+                                
+                                try:
+                                    tool_module_name = f"src.capabilities.agents.{agent_dir.name}.tools.{tool_file.stem}"
+                                    tool_module = importlib.import_module(tool_module_name)
+                                    
+                                    for t_name, t_obj in inspect.getmembers(tool_module):
+                                        if inspect.isclass(t_obj) and issubclass(t_obj, BaseTool) and t_obj is not BaseTool:
+                                            print(f"  [Loader] Found Scoped Tool: {t_name}")
+                                            tool_instance = t_obj()
+                                            
+                                            # Register globally but typically this tool is specific to this agent
+                                            # To avoid collision, we might want to namespacify it if needed, 
+                                            # but for now we register as is and whitelist it.
+                                            global_registry.register(tool_instance)
+                                            agent_instance.allowed_tools.append(tool_instance.name)
+                                except Exception as e:
+                                    print(f"  [Loader] Failed to load tool {tool_file.name}: {e}")
+
+                        # --- Load Scoped MCP ---
+                        mcp_config_path = agent_dir / "mcp.toml"
+                        if mcp_config_path.exists():
+                            import toml
+                            try:
+                                with open(mcp_config_path, "r", encoding="utf-8") as f:
+                                    mcp_data = toml.load(f)
+                                    # We attach the config to the agent instance for later use
+                                    agent_instance.mcp_config = mcp_data
+                                    print(f"  [Loader] Loaded MCP config for {agent_instance.name}")
+                            except Exception as e:
+                                print(f"  [Loader] Failed to load MCP config: {e}")
                         
                         global_registry.register(agent_instance)
             except Exception as e:

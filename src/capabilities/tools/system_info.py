@@ -7,7 +7,7 @@ class SystemInfoTool(BaseTool):
     description = "Get basic information about the current system (OS, Python version, etc)."
     parameters = {
         "type": "object",
-        "properties": {} # No parameters needed
+        "properties": {} # 无需参数 / No parameters needed
     }
 
     async def execute(self, **kwargs) -> str:

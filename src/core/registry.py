@@ -15,6 +15,7 @@ class Registry:
 
     def register(self, capability: Capability):
         """
+        注册一个新的能力。
         Register a new capability.
         """
         if capability.name in self._capabilities:
@@ -27,6 +28,8 @@ class Registry:
 
     def get_all_tool_schemas(self, whitelist: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """
+        获取所有注册能力的 OpenAI 函数模式。
+        如果提供了 whitelist，则仅返回白名单中的工具。
         Get all registered capabilities as OpenAI function schemas.
         If whitelist is provided, only return those tools.
         """
@@ -41,5 +44,19 @@ class Registry:
             else:
                  print(f"Warning: Whitelisted tool '{name}' not found in registry.")
         return filtered
+
+    def get_capabilities_tree_string(self) -> str:
+        """
+        Generates a tree view string of all registered capabilities.
+        Example:
+        - [Tool] get_system_info: Get basic information...
+        - [Agent] sample_agent: A sample agent... [Tools: tool1, tool2]
+        """
+        lines = []
+        for name, cap in self._capabilities.items():
+            # Prefix selection based on type
+            prefix = "[Agent]" if hasattr(cap, "allowed_tools") else "[Tool]"
+            lines.append(f"- {prefix} {cap.get_context_description()}")
+        return "\n".join(lines)
 
 global_registry = Registry.get_instance()

@@ -1,4 +1,6 @@
+# 全局 MCP 配置
 # Global MCP Configuration
+# 定义可由 Orchestrator 使用并可能在 Agent 之间共享的 MCP 服务器。
 # Define MCP servers that are available to the Orchestrator and potentially shared across agents.
 
 # Example:

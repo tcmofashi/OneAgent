@@ -12,6 +12,7 @@ class LLMProvider(BaseModel):
 class LLMModelConfig(BaseModel):
     provider: str
     model_name: str
+    model_config = {"protected_namespaces": ()}
 
 class Config:
     _instance = None
@@ -53,6 +54,7 @@ class Config:
 
     def get_model_config(self, label: str) -> tuple[str, str, str]:
         """
+        获取指定模型标签的配置 (api_base, api_key, model_name)。
         Returns (api_base, api_key, model_name) for a specific model label.
         """
         model_info = self.get(f"llm.models.{label}")
@@ -71,6 +73,7 @@ class Config:
 
     def get_llm_config(self) -> tuple[str, str, str]:
         """
+        获取当前激活模型的配置。
         Returns (api_base, api_key, model_name) for the active model.
         """
         active_label = self.get("llm.active_model_label")

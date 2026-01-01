@@ -2,25 +2,9 @@ from typing import List, Dict, Any
 from src.core.llm import LLMClient
 from src.core.config import global_config
 
-COMPRESSION_PROMPT = """You are an expert Context Compressor.
-Your goal is to distill a long conversation history and a specific new task into a concise "Context Briefing" for a subordinate Agent.
+from src.core.templates import get_template
 
-# Inputs
-1. **Target Agent Profile**: Credentials and capabilities of the Agent who will receive this task.
-2. **Orchestrator Plan**: The current high-level plan and the specific task being assigned.
-3. **Full History**: The complete conversation history so far (User inputs + Orchestrator thoughts).
-
-# Your Strategy
-- **Analyze Intent**: Understand what the User wants and how this specific task fits into the Orchestrator's plan.
-- **Filter Relevancy**: The Target Agent ONLY needs information relevant to its specific job. Remove everything else.
-- **Formulate Request**: Rewrite the task into a clear, self-contained instruction that aligns with the Agent's capabilities.
-
-# Output Format (JSON)
-{
-  "core_request": "The specific, actionable instruction for the agent. Must be clear and unambiguous.",
-  "compressed_context": "A summary of relevant background info (e.g., file paths, restrictions, previous errors) necessary for THIS agent to succeed."
-}
-"""
+# Removed hardcoded COMPRESSION_PROMPT
 
 class ContextCompressor:
     def __init__(self):
@@ -41,15 +25,27 @@ class ContextCompressor:
         history: List[Dict[str, Any]], 
         target_task: str, 
         agent_description: str,
-        orchestrator_plan: str
+        orchestrator_plan: str,
+        upstream_tools: str = ""
     ) -> Dict[str, str]:
         """
+        基于以下内容压缩上下文：
+        - history: 迄今为止的对话。
+        - target_task: 现在需要做什么。
+        - agent_description: 谁在做 (能力)。
+        - orchestrator_plan: 大局 (任务列表)。
+        - upstream_tools: 上级可用能力 (只读)。
+        
         Compresses context based on:
         - history: The conversation so far.
         - target_task: What needs to be done now.
         - agent_description: Who is doing it (Capabilities).
         - orchestrator_plan: The bigger picture (Task List).
+        - upstream_tools: Read-only upstream capabilities to inform the agent.
         """
+        # Get dynamic system prompt
+        system_prompt = get_template("COMPRESSOR_SYSTEM")
+        
         user_content = f"""## 1. Target Agent Profile
 {agent_description}
 
@@ -61,9 +57,12 @@ class ContextCompressor:
 
 ## 4. Full History
 {str(history)}
+
+## 5. Upstream Capabilities (Read-Only)
+{upstream_tools}
 """
         messages = [
-            {"role": "system", "content": COMPRESSION_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}
         ]
         
