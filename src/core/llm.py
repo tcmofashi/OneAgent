@@ -24,7 +24,8 @@ class LLMClient:
         tool_choice: Any = "auto",
         temperature: float = 0.7,
         response_format: Optional[Dict[str, Any]] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        stream: bool = False
     ) -> Any:
         """
         client.chat.completions.create 的包装器。
@@ -44,6 +45,7 @@ class LLMClient:
             "model": target_model,
             "messages": messages,
             "temperature": temperature,
+            "stream": stream
         }
         if tools:
             params["tools"] = tools
@@ -52,6 +54,11 @@ class LLMClient:
             params["response_format"] = response_format
 
         response = await self.client.chat.completions.create(**params)
-        return response.choices[0].message
+        
+        if stream:
+            return response
+        else:
+            return response.choices[0].message
+
 
 global_llm_client = LLMClient()

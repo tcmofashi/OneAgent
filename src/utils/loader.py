@@ -17,6 +17,11 @@ def load_capabilities():
     # 1. Register Global Shared Tools
     global_registry.register(SystemInfoTool())
     
+    # 2. Register Runtime Tools (standard sub-agent tools)
+    from src.runtime_tools.report_status import ReportStatusTool
+    global_registry.register(ReportStatusTool())
+
+    
     # 2. Load Directory-Based Agents
     agents_root = Path(__file__).parent.parent / "capabilities" / "agents"
     if not agents_root.exists():

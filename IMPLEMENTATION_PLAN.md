@@ -131,6 +131,68 @@ OneAgent/
 6.  实现 Context Compressor (Completed)。
 7.  实现 Agent 标准化汇报协议 (Completed)。
 
+### 7. CLI Agent 集成 (Qwen-Code / Claude-Code)
+### 7. CLI Agent 集成 (Standard Sub-Agent Runtime)
+**目标**: 将外部命令行 Agent (Qwen-Code/Claude-Code) 接入 OneAgent 体系，使其行为符合 OneAgent 协议。
+**方案**: **OneAgent Runtime (MCP Server)**。
+*   **概念转变**: MCP Server 不再暴露全局工具，而是提供一套 **"标准子 Agent 基础设施" (Standard Sub-Agent Toolset)**。
+*   **核心工具**: 
+    *   `report_status`: 用于汇报任务结果 (`SUCCESS`/`FAILURE`)，或请求中断 (`INTERRUPTED`) 以申请上级能力。
+    *   *注: CLI Agent 通过此工具与 Orchestrator 进行协议级通信。*
+*   **身份识别 (Identity Injection)**:
+    *   通过 `--agent-name` 参数在启动时注入身份，解决 MCP Stdio 无状态问题。
+*   **工作流**:
+    1.  Orchestrator 决定调用 CLI Agent (如 Claude)。
+    2.  Orchestrator 启动 CLI 进程，并监听标准化输出。
+    3.  CLI Agent 启动自带的 MCP Client，连接 OneAgent Runtime。
+    4.  CLI Agent 思考并调用 `report_status` 完成交互。
+
+### 8. 结构化日志系统 (Structured Logging)
+**目标**: 完整记录 "Orchestrator -> Agent -> Tool" 的调用链路和中间状态，便于调试和审计。
+**实现**: `src/core/logger.py`
+*   **格式**: JSONL (每行一个 JSON 对象)。
+*   **核心字段**:
+    *   `trace_id`: 全局请求 ID。
+    *   `span_id`: 当前执行单元 ID。
+    *   `parent_span_id`: 上级调用者 ID。
+    *   `event`: `TASK_START`, `THOUGHT`, `TOOL_CALL`, `TOOL_RESULT`, `TASK_END`。
+    *   `agent`: 当前 Agent 名称。
+    *   `content`: 详细内容 (Prompt, Result, Error)。
+*   **存储**: `logs/{date}.log`。
+
+### 9. 会话管理系统 (Session Management)
+**目标**: 支持持久化会话，随时恢复上下文 (Context Restoration)。
+**实现**: `src/core/session.py`
+*   **Session State**:
+    *   `session_id`: UUID。
+    *   `history`: 完整的对话历史 (Messages)。
+    *   `task_list`: 当前任务列表状态。
+    *   `variables`: 运行时变量 (Scratchpad)。
+*   **Persistence**: 本地 JSON 文件 (`logs/sessions/{session_id}.json`)。
+*   **Orchestrator 集成**:
+    *   `__init__(session_id=None)`: 如果提供 ID，则加载历史状态。
+    *   每次交互结束自动保存。
+
+### 10. Web Interface & MCP HTTP Server
+**目标**: 提供可视化的交互界面，并作为 MCP HTTP Server 运行。
+**实现**: `src/server/web_server.py` (FastAPI)
+*   **后端 API**:
+    *   `POST /api/chat`: 发送消息 (Stream Response)。
+    *   `POST /api/sessions`: 创建新会话。
+    *   `GET /api/sessions`: 列出所有历史会话。
+    *   `POST /api/sessions/{id}/resume`: 恢复会话。
+    *   `POST /api/sessions/{id}/rewind`: 回滚到指定 turn。
+*   **MCP Integration**:
+    *   `GET /sse`: MCP SSE Endpoint for tool exposure.
+    *   `POST /messages`: MCP Protocol messages.
+*   **前端 (Modern UI)**:
+    *   Technology: Vanilla HTML/JS/CSS (No build step).
+    *   Style: Dark Mode, Glassmorphism, Responsive.
+    *   Features:
+        *   Sidebar with Session History.
+        *   Chat Area with Streaming.
+        *   Controls: "New Chat", "Rewind" (on message hover), "Resume" (click sidebar).
+
 ### 6. 未来扩展：分布式集群 (Distributed Network)
 **核心思想**: 保持交互协议不变，将 `BaseAgent` 的 Python 调用映射为网络 API 调用。
 

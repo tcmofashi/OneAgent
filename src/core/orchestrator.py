@@ -1,5 +1,6 @@
 import json
 import asyncio
+import uuid
 from typing import List, Dict, Any, Optional
 from src.core.llm import global_llm_client
 from src.core.registry import global_registry
@@ -7,18 +8,30 @@ from src.capabilities.tools.todo_list import TodoListTool
 from src.core.capability import BaseAgent
 from src.core.compressor import global_compressor
 from src.core.templates import get_template
-
+from src.core.session import SessionManager
+from src.core.logger import logger
 
 class Orchestrator:
-    def __init__(self):
-        self.todo_list = "(No tasks yet)"
-        # Register internal tool manually or via registry special handling
-        # For simplicity, we register it here but it needs to be available to LLM
+    def __init__(self, session_id: Optional[str] = None):
+        self.session = SessionManager(session_id)
+        
+        # Hydrate state from session
+        self.todo_list = self.session.task_list
+        
+        # Register internal tool manually
         self.todo_tool = TodoListTool(self)
         global_registry.register(self.todo_tool)
+        
+        logger.log(
+            event="SESSION_INIT", 
+            content={"session_id": self.session.session_id, "restored": self.session.loaded}, 
+            trace_id=self.session.trace_id
+        )
 
     def update_todo_list(self, new_list: str):
         self.todo_list = new_list
+        self.session.update_task_list(new_list)
+        logger.log("TASK_LIST_UPDATE", new_list, "Orchestrator", self.session.trace_id)
         print(f"\n[Orchestrator] Task List Updated:\n{self.todo_list}\n")
 
     def _get_system_prompt(self) -> str:
@@ -28,53 +41,143 @@ class Orchestrator:
             capabilities_tree=global_registry.get_capabilities_tree_string()
         )
 
-    async def run(self, user_input: str):
+    async def run_stream(self, user_input: str):
         """
-        ReAct 循环的主入口点。
-        Main entry point for the ReAct loop.
+        Streamable ReAct loop. Yields dict events.
         """
-        # Reset history for new run, or keep it? 
-        # For a continuous session, we usually keep history but update system prompt.
-        # Here we re-construct history with dynamic system prompt for every turn is complex with OpenAI API 
-        # because System message is usually first. 
-        # Strategy: We will maintain a list of messages, but we update the content of the first message (System) every time we call API.
-        
-        if not hasattr(self, 'history'):
-             self.history = [{"role": "system", "content": self._get_system_prompt()}]
+        # If history is empty, initialize system prompt
+        if not self.session.history:
+             self.session.add_history({"role": "system", "content": self._get_system_prompt()})
         
         # Update system prompt with latest todo list
-        self.history[0]["content"] = self._get_system_prompt()
+        if self.session.history and self.session.history[0]["role"] == "system":
+            self.session.history[0]["content"] = self._get_system_prompt()
 
-        # Add user input to history
-        self.history.append({"role": "user", "content": user_input})
+        # Add user input
+        self.session.add_history({"role": "user", "content": user_input})
+        
+        logger.log("USER_INPUT", user_input, "User", self.session.trace_id)
+        yield {"type": "input_ack", "content": "Processing..."}
         
         while True:
-            # 1. Update system prompt again just in case it changed in previous loop (unlikely but safe)
-            self.history[0]["content"] = self._get_system_prompt()
+            # 1. Update system prompt
+            if self.session.history[0]["role"] == "system":
+                self.session.history[0]["content"] = self._get_system_prompt()
             
-            # 2. Get available tools
+            # 2. Tools
             tools = global_registry.get_all_tool_schemas()
             
             # 3. Call LLM
             print("\n[Orchestrator] Thinking...")
+            span_id = str(uuid.uuid4())
+            logger.log("THOUGHT_START", {"history_len": len(self.session.history)}, "Orchestrator", self.session.trace_id, span_id)
+            
+            # Yield Thinking Event
+            yield {"type": "thought", "content": "Thinking..."}
 
-            response_message = await global_llm_client.chat_completion(
-                messages=self.history,
+            # Call LLM with streaming
+            stream_response = await global_llm_client.chat_completion(
+                messages=self.session.history,
                 tools=tools if tools else None,
-                tool_choice="auto" if tools else None
+                tool_choice="auto" if tools else None,
+                stream=True
+            )
+            
+            # Accumulators
+            full_content = ""
+            tool_calls_buffer = {} # index -> tool_call_object
+            
+            async for chunk in stream_response:
+                delta = chunk.choices[0].delta
+                
+                # 1. Content Streaming
+                if delta.content:
+                    content_chunk = delta.content
+                    full_content += content_chunk
+                    yield {"type": "answer_chunk", "content": content_chunk}
+                    
+                # 2. Tool Call Streaming (Accumulation)
+                if delta.tool_calls:
+                     for tool_call_chunk in delta.tool_calls:
+                        index = tool_call_chunk.index
+                        if index not in tool_calls_buffer:
+                            tool_calls_buffer[index] = {
+                                "id": tool_call_chunk.id, 
+                                "function": {"name": "", "arguments": ""}
+                            }
+                        
+                        if tool_call_chunk.id:
+                            tool_calls_buffer[index]["id"] = tool_call_chunk.id
+                        if tool_call_chunk.function.name:
+                            tool_calls_buffer[index]["function"]["name"] += tool_call_chunk.function.name
+                        if tool_call_chunk.function.arguments:
+                            tool_calls_buffer[index]["function"]["arguments"] += tool_call_chunk.function.arguments
+
+            # Reconstruct Message Object for History
+            # We need to construct a Mock Message object compatible with schema
+            from openai.types.chat import ChatCompletionMessage, ChatCompletionMessageToolCall
+            from openai.types.chat.chat_completion_message_tool_call import Function
+            
+            reconstructed_tool_calls = []
+            if tool_calls_buffer:
+                for idx in sorted(tool_calls_buffer.keys()):
+                    tc_data = tool_calls_buffer[idx]
+                    reconstructed_tool_calls.append(
+                        ChatCompletionMessageToolCall(
+                            id=tc_data["id"] or f"call_{uuid.uuid4()}", # fallback if streamed id missing
+                            function=Function(name=tc_data["function"]["name"], arguments=tc_data["function"]["arguments"]),
+                            type="function"
+                        )
+                    )
+            
+            response_message = ChatCompletionMessage(
+                role="assistant",
+                content=full_content if full_content else None,
+                tool_calls=reconstructed_tool_calls if reconstructed_tool_calls else None
             )
 
             # 3. Handle response
-            self.history.append(response_message)
+            self.session.add_history(response_message.model_dump(exclude_none=True))
             
             # Check for tool calls
             if response_message.tool_calls:
                 for tool_call in response_message.tool_calls:
                     function_name = tool_call.function.name
-                    function_args = json.loads(tool_call.function.arguments)
+                    
+                    # Clean and Parse Tool Call Arguments
+                    raw_args = tool_call.function.arguments
+                    
+                    # 清理重复的 JSON 对象问题 (某些模型如 glm 会产生 {"key": "value"}{} 这样的输出)
+                    # Clean duplicated JSON objects (some models like glm produce {"key": "value"}{})
+                    cleaned_args = raw_args.strip()
+                    if cleaned_args.endswith("{}"):
+                        cleaned_args = cleaned_args[:-2].strip()
+                    # 处理多个重复的 {} 结尾
+                    while cleaned_args.endswith("{}"):
+                        cleaned_args = cleaned_args[:-2].strip()
+                    
+                    try:
+                        function_args = json.loads(cleaned_args)
+                    except json.JSONDecodeError as e:
+                        result = f"Error parsing tool arguments: {str(e)}. Raw args: {raw_args[:200]}"
+                        logger.log("TOOL_ERROR", {"name": function_name, "error": str(e)}, "Orchestrator", self.session.trace_id, span_id)
+                        yield {"type": "error", "content": result}
+                        # MUST add tool result to history to maintain API consistency
+                        self.session.add_history({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": result
+                        })
+                        continue  # Skip to next tool call
+
+                    
+                    logger.log("TOOL_CALL", {"name": function_name, "args": function_args}, "Orchestrator", self.session.trace_id, span_id)
+                    yield {"type": "tool_call", "name": function_name, "args": function_args}
                     
                     # Execute tool
                     capability = global_registry.get_capability(function_name)
+                    result = None  # Initialize result
+                    
                     if capability:
                         try:
                             # --- Interception for Code Agents ---
@@ -82,66 +185,76 @@ class Orchestrator:
                                 instruction = function_args.get("instruction", "")
                                 if instruction:
                                     print(f"\n[Orchestrator] Intercepting Agent Call: {function_name}...")
-                                    print(f"[Orchestrator] Running Context Compressor...")
                                     
-                                    # Get Upstream Tools (Orchestrator Capabilities)
-                                    # For simplicity, we use the global capabilities tree as "Upstream View"
+                                    # Get Upstream Tools and Compress
                                     upstream_view = global_registry.get_capabilities_tree_string()
-
-                                    # Compress
                                     agent_desc = f"Name: {capability.name}\nDescription: {capability.description}"
+                                    
+                                    # Yield compression start
+                                    yield {"type": "thought", "content": f"Intercepting call to {function_name}. Compressing context..."}
+
                                     compression_result = await global_compressor.compress(
-                                        history=self.history,
+                                        history=self.session.history, 
                                         target_task=instruction,
                                         agent_description=agent_desc,
                                         orchestrator_plan=self.todo_list,
                                         upstream_tools=upstream_view
                                     )
                                     
-                                    # Update args (Injection)
+                                    # Update args with standard sub-agent inputs
                                     new_instruction = compression_result.get("core_request", instruction)
                                     compressed_context = compression_result.get("compressed_context", "")
                                     
                                     function_args["instruction"] = new_instruction
                                     function_args["context"] = compressed_context
+                                    function_args["upstream_capabilities"] = upstream_view  # 传递上级能力树
+
                                     
-                                    # --- TRUTHFUL DISPLAY ---
+                                    # Log Interception
+                                    logger.log("AGENT_INTERCEPTION", 
+                                               {"original": instruction, "compressed": new_instruction}, 
+                                               "Orchestrator", self.session.trace_id, span_id)
+                                    
                                     print(f"\n{'='*20} PROMPT TO SUB-AGENT {'='*20}")
-                                    print(f"Agent: {function_name}")
-                                    print(f"Instruction (Refined): {new_instruction}")
-                                    print(f"Context (Compressed): {compressed_context}")
-                                    print(f"Upstream Tools Revealed: YES (Size: {len(upstream_view)} chars)")
+                                    print(f"Instruction: {new_instruction}")
                                     print(f"{'='*60}\n")
                             # ------------------------------------
 
                             result = await capability.execute(**function_args)
                             
-                            # --- Handle Protocol Status ---
-                            # Agents should return a status string like "[STATUS] Result..."
-                            # We parse this to handle INTERRUPTED
-                            if result.startswith("[INTERRUPTED]"):
-                                print(f"\n[Orchestrator] Agent {function_name} requested INTERRUPTED.")
-                                # In a real implementation, we would parse the specific request from 'result'
-                                # E.g., "Requesting tool: get_system_info"
-                                # For now, we treat it as a signal to plan for the requested tool in the NEXT turn.
-                                # But to be effective, we should execute it NOW and re-invoke?
-                                # Simplified approach: Return the interruption to the LLM so it can decide.
-                                # The LLM will see: "Tool get_system_info requested..." and then calls it.
-                                pass
-                            # ------------------------------
+                            # Log Result
+                            logger.log("TOOL_RESULT", {"name": function_name, "result": str(result)[:500]}, "Orchestrator", self.session.trace_id, span_id)
+                            yield {"type": "tool_result", "name": function_name, "result": str(result)}
+                            
                         except Exception as e:
                             result = f"Error executing {function_name}: {str(e)}"
+                            logger.log("TOOL_ERROR", {"name": function_name, "error": str(e)}, "Orchestrator", self.session.trace_id, span_id)
+                            yield {"type": "error", "content": str(e)}
                     else:
                         result = f"Error: Tool '{function_name}' not found."
+                        logger.log("TOOL_ERROR", {"name": function_name, "error": "Not Found"}, "Orchestrator", self.session.trace_id, span_id)
+                        yield {"type": "error", "content": f"Tool {function_name} not found"}
 
-                    # Append tool result to history
-                    self.history.append({
+                    # ALWAYS append tool result to history (required by API)
+                    self.session.add_history({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "content": str(result)
+                        "content": str(result) if result else "No result"
                     })
             else:
-                # No tool calls -> Final Answer or Question
-                content = response_message.content
-                print(f"\n[Orchestrator] Final Answer: {content}")
-                return content
+                # No tool calls -> Final Answer (Streaming already handled)
+                logger.log("TASK_END", full_content, "Orchestrator", self.session.trace_id, span_id)
+                print(f"\n[Orchestrator] Final Answer: {full_content}")
+                yield {"type": "answer_done", "content": full_content}
+                return
+
+
+    async def run(self, user_input: str):
+        """
+        Legacy run method (wraps run_stream for backward compatibility).
+        """
+        final_answer = ""
+        async for event in self.run_stream(user_input):
+            if event["type"] == "answer":
+                final_answer = event["content"]
+        return final_answer

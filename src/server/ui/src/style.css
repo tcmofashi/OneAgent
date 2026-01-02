@@ -1,0 +1,44 @@
+/* Global Styles compatible with Markdown */
+:root {
+  --color-canvas-default: #0d1117;
+  --color-canvas-subtle: #161b22;
+  --color-border-default: #30363d;
+  --color-border-muted: #21262d;
+  --color-fg-default: #c9d1d9;
+  --color-fg-muted: #8b949e;
+  --color-accent-fg: #58a6ff;
+  --color-success-fg: #238636;
+  --color-danger-fg: #da3633;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-canvas-default);
+  color: var(--color-fg-default);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+}
+
+/* Markdown Styles */
+.markdown-body {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.markdown-body pre {
+  background-color: var(--color-canvas-subtle);
+  border-radius: 6px;
+  padding: 16px;
+  overflow: auto;
+}
+
+.markdown-body code {
+  background-color: rgba(110, 118, 129, 0.4);
+  border-radius: 6px;
+  padding: 0.2em 0.4em;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+}
+
+.markdown-body pre code {
+  background-color: transparent;
+  padding: 0;
+}

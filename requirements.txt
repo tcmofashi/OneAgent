@@ -2,3 +2,8 @@ openai>=1.0.0
 toml
 pydantic
 colorama
+mcp
+fastapi
+uvicorn
+sse-starlette
+python-multipart
