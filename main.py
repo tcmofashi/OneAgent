@@ -15,6 +15,20 @@ async def main():
     # 2. Initialize Orchestrator
     orchestrator = Orchestrator()
     
+    # Check for command line arguments
+    if len(sys.argv) > 1:
+        prompt = sys.argv[1]
+        print(f"Executing command: {prompt}")
+        async for event in orchestrator.run_stream(prompt):
+            event_type = event.get("type", "")
+            if event_type == "answer_chunk":
+                print(event.get("content", ""), end="", flush=True)
+            elif event_type == "answer_done":
+                print()
+            elif event_type == "error":
+                print(f"[Error] {event.get('content', '')}")
+        return
+
     print(f"OneAgent initialized. Active Model: {global_config.get('llm.active_model_label')}")
     print("Enter 'exit' to quit.")
     

@@ -60,3 +60,13 @@ cover/
 config/config.toml
 logs/
 workspace/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Exceptions
+# Allow checking in the compiled bridge distribution
+!src/capabilities/agents/qwen_agent/cli_dist/dist/

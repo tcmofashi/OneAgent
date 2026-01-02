@@ -156,19 +156,53 @@ class Orchestrator:
                     while cleaned_args.endswith("{}"):
                         cleaned_args = cleaned_args[:-2].strip()
                     
+                    function_args = None
                     try:
                         function_args = json.loads(cleaned_args)
                     except json.JSONDecodeError as e:
-                        result = f"Error parsing tool arguments: {str(e)}. Raw args: {raw_args[:200]}"
-                        logger.log("TOOL_ERROR", {"name": function_name, "error": str(e)}, "Orchestrator", self.session.trace_id, span_id)
-                        yield {"type": "error", "content": result}
-                        # MUST add tool result to history to maintain API consistency
-                        self.session.add_history({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": result
-                        })
-                        continue  # Skip to next tool call
+                        # 使用 LLM 清理模型尝试修复 JSON
+                        # Use json_cleaner model to attempt fixing malformed JSON
+                        print(f"[Orchestrator] JSON parse failed, attempting LLM cleanup...")
+                        try:
+                            from src.core.llm import LLMClient
+                            cleaner = LLMClient(role="json_cleaner")
+                            cleanup_prompt = f"""请修复以下损坏的 JSON 字符串，只返回有效的 JSON，不要添加任何解释：
+
+损坏的 JSON:
+```
+{raw_args}
+```
+
+修复后的 JSON:"""
+                            cleanup_response = await cleaner.chat_completion(
+                                messages=[{"role": "user", "content": cleanup_prompt}],
+                                stream=False
+                            )
+                            cleaned_by_llm = cleanup_response.content.strip()
+                            # 提取 JSON（可能被 markdown 代码块包裹）
+                            if "```json" in cleaned_by_llm:
+                                cleaned_by_llm = cleaned_by_llm.split("```json")[1].split("```")[0].strip()
+                            elif "```" in cleaned_by_llm:
+                                cleaned_by_llm = cleaned_by_llm.split("```")[1].split("```")[0].strip()
+                            
+                            function_args = json.loads(cleaned_by_llm)
+                            print(f"[Orchestrator] LLM cleanup successful")
+                            logger.log("JSON_CLEANUP_SUCCESS", {"original": raw_args[:100], "cleaned": cleaned_by_llm[:100]}, "Orchestrator", self.session.trace_id, span_id)
+                        except Exception as cleanup_error:
+                            # LLM 清理也失败，记录错误并跳过
+                            result = f"Error parsing tool arguments: {str(e)}. LLM cleanup also failed: {str(cleanup_error)}. Raw args: {raw_args[:200]}"
+                            logger.log("TOOL_ERROR", {"name": function_name, "error": str(e), "cleanup_error": str(cleanup_error)}, "Orchestrator", self.session.trace_id, span_id)
+                            yield {"type": "error", "content": result}
+                            # MUST add tool result to history to maintain API consistency
+                            self.session.add_history({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": result
+                            })
+                            continue  # Skip to next tool call
+
+                    if function_args is None:
+                        continue  # Skip if we still don't have valid args
 
                     
                     logger.log("TOOL_CALL", {"name": function_name, "args": function_args}, "Orchestrator", self.session.trace_id, span_id)
