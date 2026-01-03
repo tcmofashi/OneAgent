@@ -70,3 +70,12 @@ yarn-error.log*
 # Exceptions
 # Allow checking in the compiled bridge distribution
 !src/capabilities/agents/qwen_agent/cli_dist/dist/
+# Allow checking in gui_automation_agent lib (gelab-zero components)
+!src/capabilities/agents/gui_automation_agent/lib/
+
+# Sub-agent large media files
+Open-AutoGLM/**/*.mp4
+Open-AutoGLM/**/*.gif
+gelab-zero/**/*.mp4
+gelab-zero/**/*.gif
+

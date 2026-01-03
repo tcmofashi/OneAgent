@@ -1,0 +1,33 @@
+# GUI Automation Agent 专属配置
+# 模型配置由 OneAgent 主配置文件 (config/config.toml) 管理
+
+[agent]
+# 模型角色，对应 config.toml 中的 llm.functional_roles.gui_automation
+model_role = "gui_automation"
+
+# 最大执行步数
+max_steps = 50
+
+# 每步执行后的延迟（秒）
+delay_after_capture = 2.0
+
+# 是否在任务开始时重置环境（回到桌面）
+reset_environment = true
+
+# 唤醒应用时是否强制刷新（先关闭再打开）
+reflush_app = true
+
+[logging]
+# 日志目录（相对于 lib 目录）
+log_dir = "logs/traces"
+image_dir = "logs/images"
+
+# 调试模式
+debug = false
+
+[device]
+# 设备选择策略: "first" 使用第一个连接的设备, "specify" 使用指定的设备
+selection = "specify"
+
+# 当 selection = "specify" 时使用的设备 ID
+device_id = "QV7127F73E"

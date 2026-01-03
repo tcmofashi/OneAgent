@@ -7,3 +7,10 @@ fastapi
 uvicorn
 sse-starlette
 python-multipart
+
+# gelab-zero (GUI Automation Agent) dependencies
+megfile
+pyyaml
+Pillow
+jsonlines
+fastmcp

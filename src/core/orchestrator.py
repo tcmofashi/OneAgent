@@ -164,8 +164,11 @@ class Orchestrator:
                         # Use json_cleaner model to attempt fixing malformed JSON
                         print(f"[Orchestrator] JSON parse failed, attempting LLM cleanup...")
                         try:
+                            from src.core.config import global_config
                             from src.core.llm import LLMClient
-                            cleaner = LLMClient(role="json_cleaner")
+                            
+                            json_cleaner_label = global_config.get("llm.functional_roles.json_cleaner")
+                            cleaner = LLMClient(target_model_label=json_cleaner_label)
                             cleanup_prompt = f"""请修复以下损坏的 JSON 字符串，只返回有效的 JSON，不要添加任何解释：
 
 损坏的 JSON:
@@ -217,6 +220,21 @@ class Orchestrator:
                             # --- Interception for Code Agents ---
                             if isinstance(capability, BaseAgent):
                                 instruction = function_args.get("instruction", "")
+                                
+                                # Validate required argument
+                                if not instruction:
+                                    error_msg = f"Error: Agent '{function_name}' requires an 'instruction' argument describing the task."
+                                    logger.log("TOOL_ERROR", {"name": function_name, "error": error_msg}, "Orchestrator", self.session.trace_id, span_id)
+                                    yield {"type": "error", "content": error_msg}
+                                    
+                                    # Add to history
+                                    self.session.add_history({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call.id,
+                                        "content": error_msg
+                                    })
+                                    continue
+                                
                                 if instruction:
                                     print(f"\n[Orchestrator] Intercepting Agent Call: {function_name}...")
                                     

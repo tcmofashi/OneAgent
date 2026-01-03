@@ -24,6 +24,7 @@ ORCHESTRATOR_SYSTEM_ZH = """你是 OneAgent 主控，一个强大的 AI 助手�
 - 行动前务必回顾上下文和历史记录。
 - 调用工具时，确保参数完全符合 Schema。
 - **关键**: 如果上面的“当前任务列表”为空或过时，你的第一步行动必须是调用 `update_task_list`。
+- **重要**: 如果当前任务列表已经是最新的且包含了未完成的任务，**不要**再次调用 `update_task_list`。立即选择合适的工具开始执行当前任务。
 """
 
 ORCHESTRATOR_SYSTEM_EN = """You are the OneAgent Orchestrator, a powerful AI assistant capable of managing and executing complex tasks using a variety of tools.
@@ -48,6 +49,7 @@ Use the following thought process for every step:
 - Always review the Context and History before acting.
 - When calling tools, ensure arguments match the schema perfectly.
 - **CRITICAL**: If the "Current Task List" above is empty or outdated, your FIRST action should be to call `update_task_list`.
+- **IMPORTANT**: If the current task list is already up-to-date and contains pending tasks, **DO NOT** call `update_task_list` again. PROCEED IMMEDIATELY to execute the current task using available tools.
 """
 
 # Context Compressor Prompts

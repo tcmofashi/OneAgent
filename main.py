@@ -14,6 +14,7 @@ async def main():
     # 2. 初始化 Orchestrator
     # 2. Initialize Orchestrator
     orchestrator = Orchestrator()
+    print(f"Session ID: {orchestrator.session.session_id}")
     
     # Check for command line arguments
     if len(sys.argv) > 1:
