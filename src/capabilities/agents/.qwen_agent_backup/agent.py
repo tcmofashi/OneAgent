@@ -35,18 +35,6 @@ class QwenBridgeAgent(BaseAgent):
         r"^Tool with name .* is already registered",
         r"^consecutive429Count",
         r"^\[bridge\]",
-        r"^RUM flush failed",
-        r"^Flushing log events",
-        r"^Error report available at:",
-        # Filter Node.js error stack traces and warnings
-        r"^\s*at .+\(node:.+\)",  # Stack trace lines
-        r"^\s*code: 'ECONNRESET'",
-        r"^\s*host: '.*rum\.aliyuncs\.com'",
-        r"^\s*port: 443",
-        r"^\s*localAddress:",
-        r"^\s*path: null",
-        r"^Client network socket disconnected",
-        r"^\s*\}", # Closing brace of error object
     ]
     
     def _should_filter_line(self, line: str) -> bool:
@@ -185,10 +173,6 @@ class QwenBridgeAgent(BaseAgent):
             env["OPENAI_API_KEY"] = api_key
             env["OPENAI_BASE_URL"] = api_base
             
-            # CRITICAL: Disable telemetry at process level to prevent network errors
-            env["QWEN_DISABLE_TELEMETRY"] = "true"
-            env["QWEN_CODE_TELEMETRY_DISABLED"] = "1"
-            
             print(f"  🤖 模型: {model_name}")
             print(f"{'='*60}\n")
             
@@ -210,52 +194,15 @@ class QwenBridgeAgent(BaseAgent):
 
             stdout_buffer = []
             stderr_buffer = []
-            
-            # Track the last report_status tool call for accurate status reporting
-            # Structure matches OneAgent standard: status, result, reason, mismatch_detail
-            last_report_status = {
-                "status": None, 
-                "result": None,
-                "reason": None,
-                "mismatch_detail": None
-            }
 
             # Stream output with real-time formatting
             async def read_stream(stream, buffer, is_stderr=False):
-                nonlocal last_report_status
                 while True:
                     line = await stream.readline()
                     if not line:
                         break
                     decoded_line = line.decode('utf-8')
                     buffer.append(decoded_line)
-                    
-                    # Try to capture report_status tool calls from stream-json
-                    stripped = decoded_line.strip()
-                    if stripped.startswith("{"):
-                        try:
-                            msg = json.loads(stripped)
-                            if msg.get("type") == "assistant":
-                                content = msg.get("message", {}).get("content", [])
-                                for item in content:
-                                    if item.get("type") == "tool_use" and item.get("name") == "report_status":
-                                        tool_input = item.get("input", {})
-                                        # Normalize status to lowercase
-                                        status = tool_input.get("status", "").lower()
-                                        # Support both 'result' (standard) and 'summary' (legacy)
-                                        result = tool_input.get("result") or tool_input.get("summary", "")
-                                        reason = tool_input.get("reason", "")
-                                        mismatch_detail = tool_input.get("mismatch_detail", "")
-                                        
-                                        if status and result:
-                                            last_report_status = {
-                                                "status": status, 
-                                                "result": result,
-                                                "reason": reason,
-                                                "mismatch_detail": mismatch_detail
-                                            }
-                        except json.JSONDecodeError:
-                            pass
                     
                     # Format and display immediately (streaming)
                     formatted = self._format_output_line(decoded_line, is_stderr)
@@ -275,44 +222,33 @@ class QwenBridgeAgent(BaseAgent):
                 print(f"\n  ❌ CLI 退出码: {process.returncode}")
                 return f"FAILURE: Qwen CLI exited with code {process.returncode}. Stderr: {error_msg}"
 
-            # Use captured report_status if available, otherwise fall back to __ONEAGENT_RESULT__
-            if last_report_status["status"] and last_report_status["result"]:
-                status = last_report_status["status"]
-                result_text = last_report_status["result"]
-                # Construct legacy summary format or structured output
-                summary = result_text
-                if last_report_status["reason"]:
-                    summary += f"\nReason: {last_report_status['reason']}"
-                if last_report_status["mismatch_detail"]:
-                    summary += f"\nMismatch Detail: {last_report_status['mismatch_detail']}"
-            else:
-                # Fall back: Parse __ONEAGENT_RESULT__ marker
-                marker = "__ONEAGENT_RESULT__:"
-                result_line = None
-                
-                for line in reversed(stdout_buffer):
-                    if marker in line:
-                        result_line = line.strip()
-                        break
-                
-                if not result_line:
-                    return "FAILURE: Qwen CLI finished but did not return a structured result."
-                
-                json_str = result_line.split(marker, 1)[1]
-                try:
-                    result_json = json.loads(json_str)
-                    status = result_json.get("status", "success")
-                    # Support both result and summary in fallback
-                    summary = result_json.get("result") or result_json.get("summary", "No result provided.")
-                except json.JSONDecodeError:
-                    return f"FAILURE: Failed to parse bridge result JSON: {json_str}"
+            # Parse Result
+            marker = "__ONEAGENT_RESULT__:"
+            result_line = None
             
-            print(f"\n{'='*60}")
-            emoji = {"success": "✅", "failure": "❌", "rejected": "🚫", "interrupted": "⏸️"}.get(status, "❓")
-            print(f"{emoji} [QwenCLI] 任务完成 | 状态: {status.upper()}")
-            print(f"{'='*60}\n")
+            for line in reversed(stdout_buffer):
+                if marker in line:
+                    result_line = line.strip()
+                    break
             
-            return f"Task Completed.\nStatus: {status}\nResult: {summary}"
+            if not result_line:
+                return "FAILURE: Qwen CLI finished but did not return a structured result."
+            
+            json_str = result_line.split(marker, 1)[1]
+            try:
+                result = json.loads(json_str)
+                status = result.get("status", "success")
+                summary = result.get("summary", "No summary provided.")
+                
+                print(f"\n{'='*60}")
+                emoji = {"success": "✅", "failure": "❌", "rejected": "🚫", "interrupted": "⏸️"}.get(status, "❓")
+                print(f"{emoji} [QwenCLI] 任务完成 | 状态: {status.upper()}")
+                print(f"{'='*60}\n")
+                
+                return f"Task Completed.\nStatus: {status}\nSummary: {summary}"
+                
+            except json.JSONDecodeError:
+                return f"FAILURE: Failed to parse bridge result JSON: {json_str}"
 
         except Exception as e:
             return f"FAILURE: Exception running Qwen CLI bridge: {str(e)}"
