@@ -62169,7 +62169,7 @@ var require_core = __commonJS({
           }
         }
       }
-      _addSchema(schema, meta, baseId, validateSchema2 = this.opts.validateSchema, addSchema = this.opts.addUsedSchema) {
+      _addSchema(schema, meta, baseId, validateSchema = this.opts.validateSchema, addSchema = this.opts.addUsedSchema) {
         let id;
         const { schemaId } = this.opts;
         if (typeof schema == "object") {
@@ -62192,7 +62192,7 @@ var require_core = __commonJS({
             this._checkUnique(baseId);
           this.refs[baseId] = sch;
         }
-        if (validateSchema2)
+        if (validateSchema)
           this.validateSchema(schema, true);
         return sch;
       }
@@ -68485,7 +68485,7 @@ var require_core3 = __commonJS({
           }
         }
       }
-      _addSchema(schema, meta, baseId, validateSchema2 = this.opts.validateSchema, addSchema = this.opts.addUsedSchema) {
+      _addSchema(schema, meta, baseId, validateSchema = this.opts.validateSchema, addSchema = this.opts.addUsedSchema) {
         let id;
         const { schemaId } = this.opts;
         if (typeof schema == "object") {
@@ -68508,7 +68508,7 @@ var require_core3 = __commonJS({
             this._checkUnique(baseId);
           this.refs[baseId] = sch;
         }
-        if (validateSchema2)
+        if (validateSchema)
           this.validateSchema(schema, true);
         return sch;
       }
@@ -218948,6 +218948,80 @@ var init_write_file = __esm({
   }
 });
 
+// packages/core/src/tools/report-status-tool.ts
+var ReportStatusToolInvocation, ReportStatusTool;
+var init_report_status_tool = __esm({
+  "packages/core/src/tools/report-status-tool.ts"() {
+    "use strict";
+    init_esbuild_shims();
+    init_tools();
+    ReportStatusToolInvocation = class extends BaseToolInvocation {
+      static {
+        __name(this, "ReportStatusToolInvocation");
+      }
+      constructor(params) {
+        super(params);
+      }
+      getDescription() {
+        return `Reporting status: ${this.params.status} - ${this.params.summary}`;
+      }
+      async execute(signal) {
+        const resultText = JSON.stringify(this.params);
+        return {
+          llmContent: [{ text: resultText }],
+          returnDisplay: `Status: ${this.params.status}
+Summary: ${this.params.summary}`
+        };
+      }
+    };
+    ReportStatusTool = class _ReportStatusTool extends BaseDeclarativeTool {
+      static {
+        __name(this, "ReportStatusTool");
+      }
+      static Name = "report_status";
+      constructor() {
+        super(
+          _ReportStatusTool.Name,
+          "Report Status",
+          `Report your final task completion status. This tool is REQUIRED when finishing a task.
+
+PARAMETERS (both are REQUIRED):
+- status: Must be EXACTLY one of: "success", "failure", "rejected", "interrupted"
+  * "success" - Task completed successfully
+  * "failure" - Task failed due to an error
+  * "rejected" - Task is outside your capabilities
+  * "interrupted" - Need help from upstream agent
+- summary: A string describing what you did or why you couldn't complete the task
+
+EXAMPLE CALLS:
+  report_status(status="success", summary="Created file hello.txt with content 'Hello World'")
+  report_status(status="failure", summary="Could not write file: permission denied")
+  report_status(status="rejected", summary="Task requires network access which I don't have")`,
+          "other" /* Other */,
+          {
+            properties: {
+              status: {
+                description: 'The completion status. MUST be exactly one of: "success", "failure", "rejected", "interrupted"',
+                type: "string",
+                enum: ["success", "failure", "rejected", "interrupted"]
+              },
+              summary: {
+                description: "REQUIRED. A detailed summary of what was done or why the task failed/was rejected.",
+                type: "string"
+              }
+            },
+            required: ["status", "summary"],
+            type: "object"
+          }
+        );
+      }
+      createInvocation(params) {
+        return new ReportStatusToolInvocation(params);
+      }
+    };
+  }
+});
+
 // packages/core/src/output/types.ts
 var init_types9 = __esm({
   "packages/core/src/output/types.ts"() {
@@ -220784,6 +220858,7 @@ var init_config3 = __esm({
     init_web_fetch();
     init_web_search();
     init_write_file();
+    init_report_status_tool();
     init_ideContext();
     init_types9();
     init_prompt_registry();
@@ -221645,6 +221720,7 @@ var init_config3 = __esm({
         registerCoreTool(TodoWriteTool, this);
         !this.sdkMode && registerCoreTool(ExitPlanModeTool, this);
         registerCoreTool(WebFetchTool, this);
+        registerCoreTool(ReportStatusTool);
         if (this.getWebSearchConfig()) {
           registerCoreTool(WebSearchTool, this);
         }
@@ -229117,15 +229193,6 @@ var init_mcp_prompts = __esm({
     "use strict";
     init_esbuild_shims();
     __name(getMCPServerPrompts, "getMCPServerPrompts");
-  }
-});
-
-// packages/core/src/tools/report-status-tool.ts
-var init_report_status_tool = __esm({
-  "packages/core/src/tools/report-status-tool.ts"() {
-    "use strict";
-    init_esbuild_shims();
-    init_tools();
   }
 });
 
@@ -287003,7 +287070,7 @@ var require_core8 = __commonJS({
           }
         }
       }
-      _addSchema(schema, meta, baseId, validateSchema2 = this.opts.validateSchema, addSchema = this.opts.addUsedSchema) {
+      _addSchema(schema, meta, baseId, validateSchema = this.opts.validateSchema, addSchema = this.opts.addUsedSchema) {
         let id;
         const { schemaId } = this.opts;
         if (typeof schema == "object") {
@@ -287026,7 +287093,7 @@ var require_core8 = __commonJS({
             this._checkUnique(baseId);
           this.refs[baseId] = sch;
         }
-        if (validateSchema2)
+        if (validateSchema)
           this.validateSchema(schema, true);
         return sch;
       }

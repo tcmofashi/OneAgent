@@ -64,8 +64,8 @@ class Orchestrator:
             if self.session.history[0]["role"] == "system":
                 self.session.history[0]["content"] = self._get_system_prompt()
             
-            # 2. Tools
-            tools = global_registry.get_all_tool_schemas()
+            # 2. Tools (exclude runtime tools - they are for sub-agents only)
+            tools = global_registry.get_all_tool_schemas(exclude_runtime_tools=True)
             
             # 3. Call LLM
             print("\n[Orchestrator] Thinking...")

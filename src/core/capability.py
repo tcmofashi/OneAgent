@@ -57,7 +57,6 @@ class BaseAgent(Capability):
     - 工具：report_status (必须调用以结束执行)
     - 输出：通过 report_status 返回 SUCCESS/FAILURE/REJECTED/INTERRUPTED
     """
-    system_prompt: str = ""  # 子 Agent 自定义的系统提示
     allowed_tools: List[str] = []  # List of tool names this agent can use
     mcp_config: Optional[Dict[str, Any]] = None  # Agent-specific MCP configuration
     
@@ -66,6 +65,9 @@ class BaseAgent(Capability):
 ## 你的身份
 你是 OneAgent 框架中的子代理：{agent_name}
 {agent_description}
+
+## 你的任务
+{instruction}
 
 ## 执行规范
 1. 你收到了上级分配的任务，必须尽力完成
@@ -77,20 +79,21 @@ class BaseAgent(Capability):
 以下是上级 Agent 拥有的能力，如果你需要帮助可以请求使用：
 {upstream_capabilities}
 
-## 你的可用工具
-{allowed_tools}
+## 你的工具能力
+你必须使用 `report_status` 工具来报告任务完成状态。
+除此之外，你可能拥有其他内置工具能力（如文件操作、代码编辑、Shell 命令等），请查阅系统提供的工具列表并充分利用它们完成任务。
 
 ## 背景上下文
 {context}
-
-## 你的专属指令
-{custom_prompt}
 """
     
     STANDARD_SYSTEM_TEMPLATE_EN = """
 ## Your Identity
 You are a sub-agent in the OneAgent framework: {agent_name}
 {agent_description}
+
+## Your Task
+{instruction}
 
 ## Execution Protocol
 1. You have received a task from your supervisor, you must try your best to complete it
@@ -102,14 +105,12 @@ You are a sub-agent in the OneAgent framework: {agent_name}
 The following capabilities are available from your supervisor, request if needed:
 {upstream_capabilities}
 
-## Your Available Tools
-{allowed_tools}
+## Your Tool Capabilities
+You MUST use the `report_status` tool to report task completion status.
+Additionally, you may have other built-in tool capabilities (such as file operations, code editing, shell commands, etc.). Check the system-provided tool list and utilize them fully to complete your task.
 
 ## Background Context
 {context}
-
-## Your Custom Instructions
-{custom_prompt}
 """
     
     # 标准参数定义 - 所有 Agent 都接收这些参数
@@ -132,7 +133,7 @@ The following capabilities are available from your supervisor, request if needed
         "required": ["instruction"]
     }
 
-    def build_full_prompt(self, context: str = "", upstream_capabilities: str = "", language: str = "zh") -> str:
+    def build_full_prompt(self, instruction: str = "", context: str = "", upstream_capabilities: str = "", language: str = "zh") -> str:
         """
         构建完整的系统提示，组合标准模板和自定义提示。
         Build the full system prompt by combining standard template and custom prompt.
@@ -145,10 +146,10 @@ The following capabilities are available from your supervisor, request if needed
         return template.format(
             agent_name=self.name,
             agent_description=self.description,
+            instruction=instruction or "No task specified",
             upstream_capabilities=upstream_capabilities or "None provided",
             allowed_tools=tools_str,
-            context=context or "No additional context",
-            custom_prompt=self.system_prompt or "No custom instructions"
+            context=context or "No additional context"
         )
 
     def get_allowed_tool_schemas(self) -> List[Dict[str, Any]]:

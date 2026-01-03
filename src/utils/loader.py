@@ -6,6 +6,7 @@ from pathlib import Path
 from src.core.registry import global_registry
 from src.core.capability import BaseAgent
 from src.capabilities.tools.system_info import SystemInfoTool
+from src.capabilities.tools.request_user_input import RequestUserInputTool
 
 from src.core.capability import BaseTool
 
@@ -14,12 +15,13 @@ def load_capabilities():
     加载所有能力 (Agents, Tools) 到注册表。
     Load all capabilities (Agents, Tools) into the registry.
     """
-    # 1. Register Global Shared Tools
+    # 1. Register Global Shared Tools (available to Orchestrator)
     global_registry.register(SystemInfoTool())
+    global_registry.register(RequestUserInputTool())
     
-    # 2. Register Runtime Tools (standard sub-agent tools)
+    # 2. Register Runtime Tools (standard sub-agent tools, excluded from Orchestrator)
     from src.runtime_tools.report_status import ReportStatusTool
-    global_registry.register(ReportStatusTool())
+    global_registry.register(ReportStatusTool(), is_runtime_tool=True)
 
     
     # 2. Load Directory-Based Agents
