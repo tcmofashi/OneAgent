@@ -23,6 +23,7 @@ class SessionManager:
             self.trace_id = str(uuid.uuid4())
             self.history: List[Dict[str, Any]] = []
             self.task_list: str = "(No tasks yet)"
+            self.agent_tasks: str = "(No agent tasks yet)"
             self.variables: Dict[str, Any] = {}
             self.created_at = datetime.now().isoformat()
             self._save() # Initial Save
@@ -42,6 +43,7 @@ class SessionManager:
                 self.trace_id = data.get("trace_id", str(uuid.uuid4()))
                 self.history = data.get("history", [])
                 self.task_list = data.get("task_list", "")
+                self.agent_tasks = data.get("agent_tasks", "(No agent tasks yet)")
                 self.variables = data.get("variables", {})
                 self.created_at = data.get("created_at", "")
                 print(f"[Session] Loaded session {self.session_id}")
@@ -58,6 +60,7 @@ class SessionManager:
             "updated_at": datetime.now().isoformat(),
             "created_at": self.created_at,
             "task_list": self.task_list,
+            "agent_tasks": self.agent_tasks,
             "variables": self.variables,
             "history": self.history
         }
@@ -73,6 +76,10 @@ class SessionManager:
 
     def update_task_list(self, new_list: str):
         self.task_list = new_list
+        self._save()
+
+    def update_agent_tasks(self, new_list: str):
+        self.agent_tasks = new_list
         self._save()
         
     

@@ -227628,18 +227628,12 @@ var init_report_status_tool = __esm({
         __name(this, "ReportStatusToolInvocation");
       }
       getDescription() {
-        let desc2 = `Reporting status: ${this.params.status} - ${this.params.result}`;
-        if (this.params.reason) desc2 += ` (Reason: ${this.params.reason})`;
-        return desc2;
+        return `Reporting status: ${this.params.status} - ${this.params.message}`;
       }
       async execute(_signal) {
         const resultText = JSON.stringify(this.params);
         let display = `Status: ${this.params.status}
-Result: ${this.params.result}`;
-        if (this.params.reason) display += `
-Reason: ${this.params.reason}`;
-        if (this.params.mismatch_detail) display += `
-Mismatch Detail: ${this.params.mismatch_detail}`;
+Result: ${this.params.message}`;
         return {
           llmContent: [{ text: resultText }],
           returnDisplay: display
@@ -227663,15 +227657,13 @@ PARAMETERS:
   * "failure" - Task failed due to an error  
   * "rejected" - Task is outside your capabilities
   * "interrupted" - Need help from upstream agent (will pause execution and request upstream assistance)
-- result (REQUIRED): The result of the execution (if SUCCESS) or error message (if FAILURE).
-- reason (OPTIONAL): Detailed reason for FAILURE or REJECTED.
-- mismatch_detail (OPTIONAL): If status is REJECTED, explain WHY this task is out of your scope.
+- message (REQUIRED): The detailed content of the report. This includes the task result, error details, refusal reasons, or request for help.
 
 EXAMPLE CALLS:
-  report_status(status="success", result="Created file hello.txt with content 'Hello World'")
-  report_status(status="failure", result="Could not write file: permission denied", reason="FileSystemError")
-  report_status(status="rejected", result="Task requires network access", mismatch_detail="I do not have internet access capabilities")
-  report_status(status="interrupted", result="Need upstream tool 'execute_http_request'", reason="Missing capability")`,
+  report_status(status="success", message="Created file hello.txt with content 'Hello World'")
+  report_status(status="failure", message="Could not write file: permission denied (FileSystemError)")
+  report_status(status="rejected", message="Task requires network access, but I do not have internet access capabilities")
+  report_status(status="interrupted", message="Need upstream tool 'execute_http_request' (Missing capability)")`,
           "other" /* Other */,
           {
             properties: {
@@ -227679,20 +227671,12 @@ EXAMPLE CALLS:
                 description: 'The completion status. One of: "success", "failure", "rejected", "interrupted" (case-insensitive)',
                 type: "string"
               },
-              result: {
-                description: "REQUIRED. The result of the execution (if SUCCESS) or error message (if FAILURE).",
-                type: "string"
-              },
-              reason: {
-                description: "OPTIONAL. Detailed reason for FAILURE or REJECTED.",
-                type: "string"
-              },
-              mismatch_detail: {
-                description: "OPTIONAL. If status is REJECTED, explain WHY this task is out of your scope.",
+              message: {
+                description: "REQUIRED. The detailed content of the report. This includes the task result, error details, refusal reasons, or request for help.",
                 type: "string"
               }
             },
-            required: ["status", "result"],
+            required: ["status", "message"],
             type: "object"
           }
         );
@@ -227704,8 +227688,8 @@ EXAMPLE CALLS:
         if (!params.status) {
           return "status is required";
         }
-        if (!params.result) {
-          return "result is required";
+        if (!params.message) {
+          return "message is required";
         }
         const normalizedStatus = params.status.toLowerCase();
         if (!VALID_STATUSES.includes(normalizedStatus)) {
@@ -227716,9 +227700,7 @@ EXAMPLE CALLS:
       createInvocation(params) {
         const normalizedParams = {
           status: params.status.toLowerCase(),
-          result: params.result,
-          reason: params.reason,
-          mismatch_detail: params.mismatch_detail
+          message: params.message
         };
         return new ReportStatusToolInvocation(normalizedParams);
       }
@@ -328036,7 +328018,7 @@ var formatDuration = /* @__PURE__ */ __name((milliseconds) => {
 
 // packages/cli/src/generated/git-commit.ts
 init_esbuild_shims();
-var GIT_COMMIT_INFO2 = "105ad743";
+var GIT_COMMIT_INFO2 = "3a229483";
 
 // packages/cli/src/utils/systemInfo.ts
 async function getNpmVersion() {

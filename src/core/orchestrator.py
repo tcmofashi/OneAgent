@@ -5,11 +5,13 @@ from typing import List, Dict, Any, Optional
 from src.core.llm import global_llm_client
 from src.core.registry import global_registry
 from src.capabilities.tools.todo_list import TodoListTool
+from src.capabilities.tools.agent_tasks import UpdateAgentTasksTool
 from src.core.capability import BaseAgent
 from src.core.compressor import global_compressor
 from src.core.templates import get_template
 from src.core.session import SessionManager
 from src.core.logger import logger
+from src.utils.context_compressor import compress_context, should_compress
 
 class Orchestrator:
     def __init__(self, session_id: Optional[str] = None):
@@ -17,10 +19,13 @@ class Orchestrator:
         
         # Hydrate state from session
         self.todo_list = self.session.task_list
+        self.agent_tasks = self.session.agent_tasks
         
         # Register internal tool manually
         self.todo_tool = TodoListTool(self)
+        self.agent_tasks_tool = UpdateAgentTasksTool(self)
         global_registry.register(self.todo_tool)
+        global_registry.register(self.agent_tasks_tool)
         
         logger.log(
             event="SESSION_INIT", 
@@ -34,10 +39,17 @@ class Orchestrator:
         logger.log("TASK_LIST_UPDATE", new_list, "Orchestrator", self.session.trace_id)
         print(f"\n[Orchestrator] Task List Updated:\n{self.todo_list}\n")
 
+    def update_agent_tasks(self, new_list: str):
+        self.agent_tasks = new_list
+        self.session.update_agent_tasks(new_list)
+        logger.log("AGENT_TASKS_UPDATE", new_list, "Orchestrator", self.session.trace_id)
+        print(f"\n[Orchestrator] Agent Task List Updated:\n{self.agent_tasks}\n")
+
     def _get_system_prompt(self) -> str:
         template = get_template("ORCHESTRATOR_SYSTEM")
         return template.format(
             todo_list=self.todo_list,
+            agent_tasks=self.agent_tasks,
             capabilities_tree=global_registry.get_capabilities_tree_string()
         )
 
@@ -63,6 +75,14 @@ class Orchestrator:
             # 1. Update system prompt
             if self.session.history[0]["role"] == "system":
                 self.session.history[0]["content"] = self._get_system_prompt()
+            
+            # 1.5. 上下文压缩检查
+            if await should_compress(self.session.history):
+                self.session.history = await compress_context(
+                    self.session.history, 
+                    keep_turns=5, 
+                    agent_name="Orchestrator"
+                )
             
             # 2. Tools (exclude runtime tools - they are for sub-agents only)
             tools = global_registry.get_all_tool_schemas(exclude_runtime_tools=True)
@@ -94,7 +114,9 @@ class Orchestrator:
                 if delta.content:
                     content_chunk = delta.content
                     full_content += content_chunk
-                    yield {"type": "answer_chunk", "content": content_chunk}
+                    # 只打印非纯空白内容
+                    if content_chunk.strip():
+                        yield {"type": "answer_chunk", "content": content_chunk}
                     
                 # 2. Tool Call Streaming (Accumulation)
                 if delta.tool_calls:
@@ -294,11 +316,26 @@ class Orchestrator:
                         "content": str(result) if result else "No result"
                     })
             else:
-                # No tool calls -> Final Answer (Streaming already handled)
-                logger.log("TASK_END", full_content, "Orchestrator", self.session.trace_id, span_id)
-                print(f"\n[Orchestrator] Final Answer: {full_content}")
-                yield {"type": "answer_done", "content": full_content}
-                return
+                # No tool calls -> Check if there's actual content
+                stripped_content = full_content.strip()
+                if stripped_content:
+                    # Final Answer
+                    logger.log("TASK_END", stripped_content, "Orchestrator", self.session.trace_id, span_id)
+                    print(f"\n[Orchestrator] Final Answer: {stripped_content}")
+                    yield {"type": "answer_done", "content": stripped_content}
+                    return
+                else:
+                    # Empty response - add a proper message sequence to continue
+                    print(f"[Orchestrator] 空响应，尝试提示模型继续...")
+                    # Add assistant empty message to maintain valid sequence
+                    self.session.add_history({"role": "assistant", "content": ""})
+                    # Add user prompt to encourage action
+                    self.session.add_history({
+                        "role": "user", 
+                        "content": "请继续执行任务，或者直接回复最终结果给用户。"
+                    })
+                    # Context compression is handled at loop start
+                    continue
 
 
     async def run(self, user_input: str):

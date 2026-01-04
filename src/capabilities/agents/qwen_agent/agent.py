@@ -90,9 +90,9 @@ class QwenBridgeAgent(BaseAgent):
                         
                         if tool_name == "report_status":
                             status = tool_input.get("status", "unknown")
-                            summary = tool_input.get("summary", "")
+                            message = tool_input.get("message") or tool_input.get("result") or tool_input.get("summary", "")
                             emoji = {"success": "✅", "failure": "❌", "rejected": "🚫", "interrupted": "⏸️"}.get(status, "❓")
-                            lines.append(f"  {emoji} 状态报告: [{status.upper()}] {summary}")
+                            lines.append(f"  {emoji} 状态报告: [{status.upper()}] {message}")
                         else:
                             input_preview = json.dumps(tool_input, ensure_ascii=False)[:100]
                             if len(json.dumps(tool_input, ensure_ascii=False)) > 100:
@@ -212,12 +212,10 @@ class QwenBridgeAgent(BaseAgent):
             stderr_buffer = []
             
             # Track the last report_status tool call for accurate status reporting
-            # Structure matches OneAgent standard: status, result, reason, mismatch_detail
+            # Structure matches OneAgent standard: status, message
             last_report_status = {
                 "status": None, 
-                "result": None,
-                "reason": None,
-                "mismatch_detail": None
+                "message": None
             }
 
             # Stream output with real-time formatting
@@ -242,17 +240,17 @@ class QwenBridgeAgent(BaseAgent):
                                         tool_input = item.get("input", {})
                                         # Normalize status to lowercase
                                         status = tool_input.get("status", "").lower()
-                                        # Support both 'result' (standard) and 'summary' (legacy)
-                                        result = tool_input.get("result") or tool_input.get("summary", "")
-                                        reason = tool_input.get("reason", "")
-                                        mismatch_detail = tool_input.get("mismatch_detail", "")
+                                        # Support message, fallback to result/summary/reason/mismatch for compatibility
+                                        message = tool_input.get("message") or \
+                                                  tool_input.get("result") or \
+                                                  tool_input.get("summary") or \
+                                                  tool_input.get("reason") or \
+                                                  tool_input.get("mismatch_detail") or ""
                                         
-                                        if status and result:
+                                        if status and message:
                                             last_report_status = {
                                                 "status": status, 
-                                                "result": result,
-                                                "reason": reason,
-                                                "mismatch_detail": mismatch_detail
+                                                "message": message
                                             }
                         except json.JSONDecodeError:
                             pass
@@ -275,16 +273,11 @@ class QwenBridgeAgent(BaseAgent):
                 print(f"\n  ❌ CLI 退出码: {process.returncode}")
                 return f"FAILURE: Qwen CLI exited with code {process.returncode}. Stderr: {error_msg}"
 
-            # Use captured report_status if available, otherwise fall back to __ONEAGENT_RESULT__
-            if last_report_status["status"] and last_report_status["result"]:
+            # Use captured report_status if available
+            if last_report_status["status"] and last_report_status["message"]:
                 status = last_report_status["status"]
-                result_text = last_report_status["result"]
-                # Construct legacy summary format or structured output
-                summary = result_text
-                if last_report_status["reason"]:
-                    summary += f"\nReason: {last_report_status['reason']}"
-                if last_report_status["mismatch_detail"]:
-                    summary += f"\nMismatch Detail: {last_report_status['mismatch_detail']}"
+                message = last_report_status["message"]
+                return f"Task Completed.\nStatus: {status}\nResult: {message}"
             else:
                 # Fall back: Parse __ONEAGENT_RESULT__ marker
                 marker = "__ONEAGENT_RESULT__:"

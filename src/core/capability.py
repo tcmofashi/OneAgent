@@ -60,6 +60,15 @@ class BaseAgent(Capability):
     allowed_tools: List[str] = []  # List of tool names this agent can use
     mcp_config: Optional[Dict[str, Any]] = None  # Agent-specific MCP configuration
     
+    def __init__(self):
+        self._private_tools: Dict[str, Capability] = {}
+
+    def register_tool(self, tool: Capability):
+        """Register a tool exclusively for this agent."""
+        self._private_tools[tool.name] = tool
+        if tool.name not in self.allowed_tools:
+            self.allowed_tools.append(tool.name)
+
     # 标准系统提示模板 - 所有子 Agent 共用
     STANDARD_SYSTEM_TEMPLATE_ZH = """
 ## 你的身份
@@ -71,17 +80,47 @@ class BaseAgent(Capability):
 
 ## 执行规范
 1. 你收到了上级分配的任务，必须尽力完成
-2. 完成任务后，必须调用 `report_status` 工具报告结果
-3. 如果任务超出你的能力范围，使用 REJECTED 状态并说明原因
-4. 如果需要上级帮助或额外工具，使用 INTERRUPTED 状态
+2. **在调用任何工具之前，必须输出你的思考过程（Thinking Process）**，分析当前状态和下一步计划
+3. 完成任务后，必须调用 `report_status(status="SUCCESS", message="...")` 工具报告结果
+3. 如果任务超出你的能力范围，使用 REJECTED 状态并在 message 中说明原因
+4. 如果需要上级帮助或额外工具，使用 INTERRUPTED 状态并在 message 中说明需求
 
 ## 上级可用能力
 以下是上级 Agent 拥有的能力，如果你需要帮助可以请求使用：
 {upstream_capabilities}
 
 ## 你的工具能力
-你必须使用 `report_status` 工具来报告任务完成状态。
+你必须使用 `report_status(status, message)` 工具来报告任务完成状态。
+所有的结果内容、总结、错误详情或拒绝理由都必须包含在 `message` 参数中。
 除此之外，你可能拥有其他内置工具能力（如文件操作、代码编辑、Shell 命令等），请查阅系统提供的工具列表并充分利用它们完成任务。
+
+## 背景上下文
+{context}
+"""
+    
+    STANDARD_SYSTEM_TEMPLATE_EN = """
+## Your Identity
+You are a sub-agent in the OneAgent framework: {agent_name}
+{agent_description}
+
+## Your Task
+{instruction}
+
+## Execution Protocol
+1. You have received a task from your supervisor, you must try your best to complete it
+2. **Before calling any tool, you MUST output your thinking process**, analyzing the current state and next steps
+3. After completing the task, you MUST call `report_status(status="SUCCESS", message="...")` tool to report the result
+3. If the task is out of your scope, use REJECTED status and explain why in the message
+4. If you need help from supervisor or additional tools, use INTERRUPTED status and explain in the message
+
+## Upstream Capabilities
+The following capabilities are available from your supervisor, request if needed:
+{upstream_capabilities}
+
+## Your Tool Capabilities
+You MUST use the `report_status(status, message)` tool to report task completion status.
+All result content, summaries, error details, or refusal reasons MUST be included in the `message` parameter.
+Additionally, you may have other built-in tool capabilities (such as file operations, code editing, shell commands, etc.). Check the system-provided tool list and utilize them fully to complete your task.
 
 ## 背景上下文
 {context}
@@ -158,7 +197,21 @@ Additionally, you may have other built-in tool capabilities (such as file operat
         Retrieve schemas for tools that this agent is allowed to use.
         """
         from src.core.registry import global_registry
-        return global_registry.get_all_tool_schemas(whitelist=self.allowed_tools)
+        
+        # Split allowed tools into private vs global requests
+        # Filter whitelist for global registry to avoid warnings
+        global_whitelist = [
+            name for name in self.allowed_tools 
+            if name not in self._private_tools
+        ]
+        
+        schemas = global_registry.get_all_tool_schemas(whitelist=global_whitelist)
+        
+        # Add private tools
+        for name, tool in self._private_tools.items():
+            schemas.append(tool.to_function_schema())
+        
+        return schemas
 
     def get_context_description(self) -> str:
         """

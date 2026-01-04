@@ -115,8 +115,8 @@ def load_capabilities():
                                             print(f"  [Loader] Found Scoped Tool: {t_name}")
                                             tool_instance = t_obj()
                                             
-                                            global_registry.register(tool_instance)
-                                            agent_instance.allowed_tools.append(tool_instance.name)
+                                            # Register exclusively to the agent
+                                            agent_instance.register_tool(tool_instance)
                                 except Exception as e:
                                     print(f"  [Loader] Failed to load tool {tool_file.name}: {e}")
 

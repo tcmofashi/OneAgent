@@ -11,10 +11,19 @@ from src.core.capability import BaseTool
 class RequestUserInputTool(BaseTool):
     name = "request_user_input"
     description = """Request input from the user or wait for the user to complete a task.
-Use this when you need:
-1. Additional information from the user to proceed
-2. User to perform a manual action (e.g., deploy, restart a service)
-3. User confirmation before proceeding with a critical operation"""
+
+⚠️ IMPORTANT: Use this tool SPARINGLY to avoid frequently interrupting the user.
+Only use this when you encounter an INSURMOUNTABLE obstacle that you absolutely cannot bypass on your own.
+
+Examples of valid use cases:
+1. You need login credentials that were never provided
+2. A critical operation requires explicit user confirmation (e.g., delete data)
+3. User must perform a physical action you cannot do (e.g., plug in a device)
+
+DO NOT use this for:
+- Questions you can answer by trying different approaches
+- Information you can find or infer from context
+- Situations where you can make a reasonable assumption and proceed"""
     
     parameters = {
         "type": "object",
