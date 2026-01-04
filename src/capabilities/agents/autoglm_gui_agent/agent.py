@@ -63,6 +63,13 @@ class AutoGLMGUIAgent(BaseAgent):
     )
     allowed_tools: list[str] = ["report_status"]
     
+    # 能力描述 - 简洁格式
+    CAPABILITIES_SUMMARY = "手机GUI控制(点击/输入/滑动), 应用启动切换, 屏幕截图分析, 多平台支持(Android/iOS/鸿蒙)"
+    
+    def get_context_description(self) -> str:
+        """返回简洁的能力描述"""
+        return f"{self.name} (Agent): 手机GUI自动化代理 [{self.CAPABILITIES_SUMMARY}] [Tools: {', '.join(self.allowed_tools)}]"
+    
     # 模型角色（对应 config.toml 的 llm.functional_roles）
     model_role: str = "autoglm"
     

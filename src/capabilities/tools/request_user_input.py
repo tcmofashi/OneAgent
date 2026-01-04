@@ -10,20 +10,7 @@ from src.core.capability import BaseTool
 
 class RequestUserInputTool(BaseTool):
     name = "request_user_input"
-    description = """Request input from the user or wait for the user to complete a task.
-
-⚠️ IMPORTANT: Use this tool SPARINGLY to avoid frequently interrupting the user.
-Only use this when you encounter an INSURMOUNTABLE obstacle that you absolutely cannot bypass on your own.
-
-Examples of valid use cases:
-1. You need login credentials that were never provided
-2. A critical operation requires explicit user confirmation (e.g., delete data)
-3. User must perform a physical action you cannot do (e.g., plug in a device)
-
-DO NOT use this for:
-- Questions you can answer by trying different approaches
-- Information you can find or infer from context
-- Situations where you can make a reasonable assumption and proceed"""
+    description = "Request user input when facing INSURMOUNTABLE obstacles (e.g., missing credentials, explicit confirmation needed). ⚠️ Use SPARINGLY - do NOT use for questions you can resolve by trying alternatives."
     
     parameters = {
         "type": "object",

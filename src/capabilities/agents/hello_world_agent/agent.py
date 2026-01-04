@@ -25,6 +25,13 @@ class HelloWorldAgent(ReactAgent):
     name = "hello_world_agent"
     description = "A simple agent that receives greetings and responds with a verified message. Demonstrates the standard sub-agent workflow."
     
+    # 能力描述 - 简洁格式
+    CAPABILITIES_SUMMARY = "问候响应, 标准工作流演示"
+    
+    def get_context_description(self) -> str:
+        """返回简洁的能力描述"""
+        return f"{self.name} (Agent): 示例代理 [{self.CAPABILITIES_SUMMARY}] [Tools: {', '.join(self.allowed_tools)}]"
+    
     # 允许使用的工具列表（必须包含 report_status）
     allowed_tools = ["greeting_tool", "report_status"]
     
