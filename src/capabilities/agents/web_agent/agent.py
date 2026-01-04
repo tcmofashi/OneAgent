@@ -12,6 +12,13 @@ class WebAgent(ReactAgent):
     model_label: Optional[str] = None
     model_role: str = "web_browsing" # Changed from hardcoded Qwen model to configurable role
     
+    # 能力描述 - 简洁格式
+    CAPABILITIES_SUMMARY = "网页导航, 元素点击, 表单填写, 内容读取, 截图, JS执行"
+    
+    def get_context_description(self) -> str:
+        """返回简洁的能力描述"""
+        return f"{self.name} (Agent): 网页浏览代理 [{self.CAPABILITIES_SUMMARY}] [Tools: {', '.join(self.allowed_tools)}]"
+    
     # Tools are automatically populated by the loader from the tools/ directory
     # But we can also specify default allowed tools if we wanted to restrict it further
     # For now, we rely on the loader adding them to self.allowed_tools

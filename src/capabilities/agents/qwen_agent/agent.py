@@ -24,6 +24,17 @@ class QwenBridgeAgent(BaseAgent):
     NODE_BIN: str = "node"
     allowed_tools: list[str] = ["report_status"]
 
+    # 能力描述 - 简洁格式，与其他能力保持一致
+    # 详细说明供 Orchestrator 理解此 Agent 适合处理的任务类型
+    CAPABILITIES_SUMMARY = "代码编辑, 命令行执行(bash/git/npm/pip/docker), Web搜索, 文件操作"
+
+    def get_context_description(self) -> str:
+        """
+        返回简洁的能力描述，与其他 Agent/Tool 格式一致。
+        用于 Orchestrator 的能力树展示和任务匹配。
+        """
+        return f"{self.name} (Agent): 强大的编程代理 [{self.CAPABILITIES_SUMMARY}] [Tools: {', '.join(self.allowed_tools)}]"
+
     # Debug patterns to filter out
     DEBUG_PATTERNS = [
         r"^\[DEBUG\]",
