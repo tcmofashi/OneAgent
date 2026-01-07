@@ -14,3 +14,7 @@ pyyaml
 Pillow
 jsonlines
 fastmcp
+
+# web_agent (Web Browsing Agent) dependencies
+playwright
+trafilatura

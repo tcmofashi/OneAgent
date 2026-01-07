@@ -1,4 +1,6 @@
 import asyncio
+import atexit
+import signal
 from typing import Optional, Dict, Any, List
 from playwright.async_api import async_playwright, Playwright, Browser, BrowserContext, Page, ElementHandle
 
@@ -25,6 +27,7 @@ class PlaywrightManager:
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
         self._initialized = True
+        self._cleanup_registered = False
 
     async def get_page(self) -> Page:
         """
@@ -42,27 +45,66 @@ class PlaywrightManager:
             
         if not self._page:
             self._page = await self._context.new_page()
+        
+        # Register cleanup on first use
+        if not self._cleanup_registered:
+            self._register_cleanup()
+            self._cleanup_registered = True
             
         return self._page
+
+    def _register_cleanup(self):
+        """Register cleanup handlers for graceful shutdown."""
+        atexit.register(self._sync_cleanup)
+    
+    def _sync_cleanup(self):
+        """Synchronous cleanup wrapper for atexit."""
+        try:
+            # Try to get running loop, if none exists create one for cleanup
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            if loop.is_running():
+                # Schedule cleanup in running loop
+                loop.create_task(self.close())
+            else:
+                # Run cleanup synchronously
+                loop.run_until_complete(self.close())
+        except Exception:
+            # Silently ignore cleanup errors on exit
+            pass
 
     async def close(self):
         """
         Cleanup resources.
         """
         if self._context:
-            await self._context.close()
+            try:
+                await self._context.close()
+            except Exception:
+                pass
             self._context = None
         if self._browser:
-            await self._browser.close()
+            try:
+                await self._browser.close()
+            except Exception:
+                pass
             self._browser = None
         if self._playwright:
-            await self._playwright.stop()
+            try:
+                await self._playwright.stop()
+            except Exception:
+                pass
             self._playwright = None
             
         self._page = None
 
 # Global instance
 playwright_manager = PlaywrightManager()
+
 
 class NavigateTool(BaseTool):
     name: str = "navigate"

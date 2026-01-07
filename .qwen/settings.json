@@ -1,17 +1,3 @@
 {
-  "mcpServers": {
-    "oneagent": {
-      "command": "uv",
-      "args": [
-        "run",
-        "python",
-        "-m",
-        "src.server.mcp_server"
-      ],
-      "env": {
-        "PYTHONPATH": "."
-      }
-    }
-  },
   "$version": 2
 }

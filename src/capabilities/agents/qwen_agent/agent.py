@@ -2,8 +2,12 @@ from pathlib import Path
 import asyncio
 import json
 import os
+import queue
 import re
+import shutil
+import subprocess
 import sys
+import threading
 from typing import Optional
 
 from src.core.capability import BaseAgent
@@ -66,7 +70,102 @@ class QwenBridgeAgent(BaseAgent):
             if re.search(pattern, line.strip()):
                 return True
         return False
-    
+
+    def _get_node_binary(self) -> str:
+        """Resolve Node.js binary path, checking system PATH and common locations."""
+        # 1. Check system PATH
+        if shutil.which("node"):
+            return "node"
+        
+        # 2. Check common Windows locations
+        if os.name == 'nt':
+            common_paths = [
+                r"C:\Program Files\nodejs\node.exe",
+                r"C:\Program Files (x86)\nodejs\node.exe",
+                os.path.expandvars(r"%ProgramFiles%\nodejs\node.exe")
+            ]
+            for path in common_paths:
+                if os.path.exists(path):
+                    return path
+        
+        return "node"
+
+    async def _create_subprocess_compat(self, cmd: list, cwd: str, env: dict):
+        """
+        Create a subprocess compatible with Windows async limitations.
+        Falls back to subprocess.Popen with thread-based stream reading when
+        asyncio.create_subprocess_exec raises NotImplementedError on Windows.
+        """
+        try:
+            # Try the native asyncio subprocess first
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
+                env=env
+            )
+            return process, False  # False = using native asyncio
+        except NotImplementedError:
+            # Windows fallback: use subprocess.Popen with threading
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=cwd,
+                env=env
+            )
+            return process, True  # True = using Popen fallback
+
+    async def _read_popen_stream_async(self, stream, buffer: list, callback, is_stderr: bool = False):
+        """
+        Read from a Popen stream in a thread-safe async manner with REAL-TIME output.
+        Uses a queue to pass lines from the reader thread to the async consumer.
+        """
+        line_queue = queue.Queue()
+        
+        def reader_thread():
+            """Blocking reader thread that puts lines in the queue."""
+            try:
+                for line in iter(stream.readline, b''):
+                    if not line:
+                        break
+                    decoded = line.decode('utf-8')
+                    line_queue.put(decoded)
+            except Exception:
+                pass
+            finally:
+                line_queue.put(None)  # Sentinel to signal end
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+        
+        # Start reader thread
+        reader = threading.Thread(target=reader_thread, daemon=True)
+        reader.start()
+        
+        loop = asyncio.get_event_loop()
+        
+        # Consume lines from queue in async manner
+        while True:
+            try:
+                # Non-blocking get with small timeout, then yield to event loop
+                line = await loop.run_in_executor(None, lambda: line_queue.get(timeout=0.1))
+                if line is None:  # End sentinel
+                    break
+                buffer.append(line)
+                callback(line, is_stderr)
+            except queue.Empty:
+                # No data yet, yield to event loop
+                await asyncio.sleep(0.01)
+            except Exception as e:
+                # Only break on real errors, not queue.Empty
+                if not isinstance(e, queue.Empty):
+                    break
+        
+        reader.join(timeout=1.0)
+
     def _format_stream_json(self, json_str: str) -> Optional[str]:
         """Parse and format a single stream-json line for beautiful display."""
         try:
@@ -169,7 +268,8 @@ class QwenBridgeAgent(BaseAgent):
         if not os.path.exists(self.BRIDGE_SCRIPT_PATH):
             return f"FAILURE: Bridge script not found at {self.BRIDGE_SCRIPT_PATH}"
 
-        cmd = [self.NODE_BIN, self.BRIDGE_SCRIPT_PATH, full_prompt]
+        node_bin = self._get_node_binary()
+        cmd = [node_bin, self.BRIDGE_SCRIPT_PATH, full_prompt]
         
         # Print header and FULL PROMPT
         print(f"\n{'='*60}")
@@ -211,12 +311,8 @@ class QwenBridgeAgent(BaseAgent):
             return f"FAILURE: Could not load configuration for '{target_model_label}': {e}"
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=os.getcwd(), 
-                env=env
+            process, is_popen_fallback = await self._create_subprocess_compat(
+                cmd, os.getcwd(), env
             )
 
             stdout_buffer = []
@@ -229,60 +325,74 @@ class QwenBridgeAgent(BaseAgent):
                 "message": None
             }
 
-            # Stream output with real-time formatting
-            async def read_stream(stream, buffer, is_stderr=False):
+            def process_line(decoded_line: str, is_stderr: bool = False):
+                """Process a line of output (used by both async modes)."""
                 nonlocal last_report_status
-                while True:
-                    line = await stream.readline()
-                    if not line:
-                        break
-                    decoded_line = line.decode('utf-8')
-                    buffer.append(decoded_line)
-                    
-                    # Try to capture report_status tool calls from stream-json
-                    stripped = decoded_line.strip()
-                    if stripped.startswith("{"):
-                        try:
-                            msg = json.loads(stripped)
-                            if msg.get("type") == "assistant":
-                                content = msg.get("message", {}).get("content", [])
-                                for item in content:
-                                    if item.get("type") == "tool_use" and item.get("name") == "report_status":
-                                        tool_input = item.get("input", {})
-                                        # Normalize status to lowercase
-                                        status = tool_input.get("status", "").lower()
-                                        # Support message, fallback to result/summary/reason/mismatch for compatibility
-                                        message = tool_input.get("message") or \
-                                                  tool_input.get("result") or \
-                                                  tool_input.get("summary") or \
-                                                  tool_input.get("reason") or \
-                                                  tool_input.get("mismatch_detail") or ""
-                                        
-                                        if status and message:
-                                            last_report_status = {
-                                                "status": status, 
-                                                "message": message
-                                            }
-                        except json.JSONDecodeError:
-                            pass
-                    
-                    # Format and display immediately (streaming)
-                    formatted = self._format_output_line(decoded_line, is_stderr)
-                    if formatted:
-                        print(formatted, flush=True)
-                        sys.stdout.flush()
+                
+                # Try to capture report_status tool calls from stream-json
+                stripped = decoded_line.strip()
+                if stripped.startswith("{"):
+                    try:
+                        msg = json.loads(stripped)
+                        if msg.get("type") == "assistant":
+                            content = msg.get("message", {}).get("content", [])
+                            for item in content:
+                                if item.get("type") == "tool_use" and item.get("name") == "report_status":
+                                    tool_input = item.get("input", {})
+                                    # Normalize status to lowercase
+                                    status = tool_input.get("status", "").lower()
+                                    # Support message, fallback to result/summary/reason/mismatch for compatibility
+                                    message = tool_input.get("message") or \
+                                              tool_input.get("result") or \
+                                              tool_input.get("summary") or \
+                                              tool_input.get("reason") or \
+                                              tool_input.get("mismatch_detail") or ""
+                                    
+                                    if status and message:
+                                        last_report_status = {
+                                            "status": status, 
+                                            "message": message
+                                        }
+                    except json.JSONDecodeError:
+                        pass
+                
+                # Format and display immediately (streaming)
+                formatted = self._format_output_line(decoded_line, is_stderr)
+                if formatted:
+                    print(formatted, flush=True)
+                    sys.stdout.flush()
 
-            await asyncio.gather(
-                read_stream(process.stdout, stdout_buffer),
-                read_stream(process.stderr, stderr_buffer, is_stderr=True)
-            )
-            
-            await process.wait()
+            if is_popen_fallback:
+                # Windows Popen fallback: use thread-based async reading
+                await asyncio.gather(
+                    self._read_popen_stream_async(process.stdout, stdout_buffer, process_line, False),
+                    self._read_popen_stream_async(process.stderr, stderr_buffer, process_line, True)
+                )
+                # Wait for process to complete
+                loop = asyncio.get_event_loop()
+                returncode = await loop.run_in_executor(None, process.wait)
+            else:
+                # Native asyncio subprocess: stream output with real-time formatting
+                async def read_stream(stream, buffer, is_stderr=False):
+                    while True:
+                        line = await stream.readline()
+                        if not line:
+                            break
+                        decoded_line = line.decode('utf-8')
+                        buffer.append(decoded_line)
+                        process_line(decoded_line, is_stderr)
 
-            if process.returncode != 0:
+                await asyncio.gather(
+                    read_stream(process.stdout, stdout_buffer),
+                    read_stream(process.stderr, stderr_buffer, is_stderr=True)
+                )
+                await process.wait()
+                returncode = process.returncode
+
+            if returncode != 0:
                 error_msg = "".join(stderr_buffer)
-                print(f"\n  ❌ CLI 退出码: {process.returncode}")
-                return f"FAILURE: Qwen CLI exited with code {process.returncode}. Stderr: {error_msg}"
+                print(f"\n  ❌ CLI 退出码: {returncode}")
+                return f"FAILURE: Qwen CLI exited with code {returncode}. Stderr: {error_msg}"
 
             # Use captured report_status if available
             if last_report_status["status"] and last_report_status["message"]:
@@ -319,4 +429,6 @@ class QwenBridgeAgent(BaseAgent):
             return f"Task Completed.\nStatus: {status}\nResult: {summary}"
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return f"FAILURE: Exception running Qwen CLI bridge: {str(e)}"

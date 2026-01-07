@@ -70,7 +70,9 @@ async def main():
             traceback.print_exc()
 
 if __name__ == "__main__":
+    # Windows requires ProactorEventLoop for subprocess creation (used by Playwright, etc.)
+    # SelectorEventLoop does NOT support asyncio.create_subprocess_exec on Windows
     if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     asyncio.run(main())
 
