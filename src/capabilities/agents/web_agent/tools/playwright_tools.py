@@ -251,7 +251,7 @@ class GetPageInfoTool(BaseTool):
                 # Get plain text content
                 content = await page.evaluate("document.body.innerText")
 
-            return f"URL: {url}\nTitle: {title}\n\nContent:\n{content[:5000]}..." # Truncate for safety
+            return f"URL: {url}\nTitle: {title}\n\nContent:\n{content[:25000]}..." # Truncate for safety
         except Exception as e:
             return f"Error getting page info: {str(e)} Type: {type(page)}"
 
@@ -262,22 +262,52 @@ class EvaluateScriptTool(BaseTool):
 NOTE: Script is executed as an EXPRESSION, not a function body.
 - ❌ DO NOT use 'return': return [1,2,3] will cause SyntaxError
 - ✅ Just write expression: [1,2,3] or document.body.innerText
-- ✅ For complex logic use IIFE: (() => { const x = []; /*...*/ return x })()"""
+- ✅ For complex logic use IIFE: (() => { const x = []; /*...*/ return x })()
+
+PIPE FEATURE: Use save_to_file parameter to directly save result to tmp/ directory."""
     parameters: Dict[str, Any] = {
         "type": "object",
         "properties": {
             "script": {
                 "type": "string",
                 "description": "JavaScript expression to evaluate. Do NOT use 'return' unless inside an IIFE."
+            },
+            "save_to_file": {
+                "type": "string",
+                "description": "Optional: Save result to this file in tmp/ directory (e.g., 'result.txt', 'data.json'). If not provided, result is only returned."
             }
         },
         "required": ["script"]
     }
 
-    async def execute(self, script: str) -> str:
+    async def execute(self, script: str, save_to_file: Optional[str] = None) -> str:
         try:
             page = await playwright_manager.get_page()
             result = await page.evaluate(script)
+            
+            # Convert result to string for saving
+            if isinstance(result, (dict, list)):
+                import json
+                result_str = json.dumps(result, ensure_ascii=False, indent=2)
+            else:
+                result_str = str(result)
+            
+            # Pipe to file if requested
+            if save_to_file:
+                from .file_tools import _validate_path, _ensure_tmp_dir
+                
+                is_valid, full_path, error = _validate_path(save_to_file)
+                if not is_valid:
+                    return f"Script executed but file save failed: {error}\n\nResult: {result_str}"
+                
+                # Ensure parent directories exist
+                full_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                with open(full_path, "w", encoding="utf-8") as f:
+                    f.write(result_str)
+                
+                return f"Script executed and result saved to tmp/{save_to_file} ({len(result_str)} chars)\n\nResult preview: {result_str[:500]}{'...' if len(result_str) > 500 else ''}"
+            
             return f"Script execution result: {result}"
         except Exception as e:
             return f"Error executing script: {str(e)}"

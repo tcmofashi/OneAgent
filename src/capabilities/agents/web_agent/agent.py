@@ -13,7 +13,7 @@ class WebAgent(ReactAgent):
     model_role: str = "web_browsing" # Changed from hardcoded Qwen model to configurable role
     
     # 能力描述 - 简洁格式
-    CAPABILITIES_SUMMARY = "网页导航, 元素点击, 表单填写, 内容读取, 截图, JS执行"
+    CAPABILITIES_SUMMARY = "网页导航, 元素点击, 表单填写, 内容读取, 截图, JS执行, 文件操作(tmp目录)"
     
     def get_context_description(self) -> str:
         """返回简洁的能力描述"""
@@ -33,6 +33,20 @@ class WebAgent(ReactAgent):
         
         # Add WebAgent specific rules
         additional_rules = """
+## 文件操作权限 (File Operation Permissions)
+- 你可以使用 `save_to_file`, `read_file`, `list_files`, `delete_file` 工具操作文件
+- **重要**: 所有文件操作**仅限于 `tmp/` 目录**，你在其他目录没有读写权限
+- 默认保存目录: `tmp/`
+- 如需保存 evaluate_script 的结果，使用 `save_to_file` 工具
+- 文件路径使用相对路径，如 "result.txt" 或 "data/output.json"
+
+## File Operation Permissions
+- You can use `save_to_file`, `read_file`, `list_files`, `delete_file` tools for file operations
+- **IMPORTANT**: All file operations are **restricted to `tmp/` directory only** - you have NO permissions elsewhere
+- Default save directory: `tmp/`
+- To save evaluate_script results, use the `save_to_file` tool
+- Use relative paths like "result.txt" or "data/output.json"
+
 ## 网页保持逻辑 (Web Page Persistence Logic)
 - 默认情况下，任务结束（SUCCESS/FAILURE）后浏览器状态可能会重置或关闭。
 - **如果你希望保持网页/浏览器打开**（例如为了让用户查看结果，或进行后续交互），你必须使用 `report_status(status="INTERRUPTED", message="...")`。
