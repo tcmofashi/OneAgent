@@ -2,11 +2,13 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel, Field
 
+
 class Capability(ABC):
     """
     所有能力的基类 (Code Agents, Tools, MCP Tools)。
     Base class for all capabilities (Code Agents, Tools, MCP Tools).
     """
+
     name: str
     description: str
     parameters: Dict[str, Any] = {"type": "object", "properties": {}}
@@ -40,26 +42,30 @@ class Capability(ABC):
         """
         return f"{self.name}: {self.description}"
 
+
 class BaseTool(Capability):
     """
     代表纯 Python 函数工具。
     Represents a pure python function tool.
     """
+
     pass
+
 
 class BaseAgent(Capability):
     """
     代表内部使用 LLM 的代码 Agent (Agentic Tool)。
     Represents a Code Agent (Agentic Tool) that uses LLM internally.
-    
+
     标准子 Agent 工作流：
     - 输入：instruction (核心指令), context (压缩上下文), upstream_capabilities (上级能力树)
     - 工具：report_status (必须调用以结束执行)
     - 输出：通过 report_status 返回 SUCCESS/FAILURE/REJECTED/INTERRUPTED
     """
+
     allowed_tools: List[str] = []  # List of tool names this agent can use
     mcp_config: Optional[Dict[str, Any]] = None  # Agent-specific MCP configuration
-    
+
     def __init__(self):
         self._private_tools: Dict[str, Capability] = {}
 
@@ -94,10 +100,18 @@ class BaseAgent(Capability):
 所有的结果内容、总结、错误详情或拒绝理由都必须包含在 `message` 参数中。
 除此之外，你可能拥有其他内置工具能力（如文件操作、代码编辑、Shell 命令等），请查阅系统提供的工具列表并充分利用它们完成任务。
 
+## .OneAgent 目录说明
+`.OneAgent/` 目录是所有代理共享的文件系统（Level 2 共享内存）：
+- 所有代理都可以读写 `.OneAgent/` 目录下的文件
+- 这是跨代理数据持久化和交换的标准位置
+- 当编辑文件时，建议优先选择 `.OneAgent/` 目录下的文件
+- `.OneAgent/` 目录内容会被 `.gitignore`，适合存储临时和中间结果
+- 如果你需要将代码输出保存为文件供其他代理使用，请保存到 `.OneAgent/` 目录
+
 ## 背景上下文
 {context}
 """
-    
+
     STANDARD_SYSTEM_TEMPLATE_EN = """
 ## Your Identity
 You are a sub-agent in the OneAgent framework: {agent_name}
@@ -125,10 +139,10 @@ Additionally, you may have other built-in tool capabilities (such as file operat
 ## 背景上下文
 {context}
 """
-    
+
     STANDARD_SYSTEM_TEMPLATE_EN = """
 ## Your Identity
-You are a sub-agent in the OneAgent framework: {agent_name}
+You are a sub-agent in OneAgent framework: {agent_name}
 {agent_description}
 
 ## Your Task
@@ -136,59 +150,77 @@ You are a sub-agent in the OneAgent framework: {agent_name}
 
 ## Execution Protocol
 1. You have received a task from your supervisor, you must try your best to complete it
-2. After completing the task, you MUST call `report_status` tool to report the result
+2. After completing the task, you MUST call `report_status` tool to report results
 3. If the task is out of your scope, use REJECTED status and explain why
-4. If you need help from supervisor or additional tools, use INTERRUPTED status
+4. If you need help from supervisor or additional tools, use INTERRUPTED status and explain why
 
 ## Upstream Capabilities
 The following capabilities are available from your supervisor, request if needed:
 {upstream_capabilities}
 
 ## Your Tool Capabilities
-You MUST use the `report_status` tool to report task completion status.
-Additionally, you may have other built-in tool capabilities (such as file operations, code editing, shell commands, etc.). Check the system-provided tool list and utilize them fully to complete your task.
+You MUST use `report_status(status, message)` tool to report task completion status.
+Additionally, you may have other built-in tool capabilities (such as file operations, code editing, shell commands, etc.). Check the system-provided tool list and utilize them fully to complete the task.
 
-## Background Context
+## .OneAgent Directory Explanation
+The `.OneAgent/` directory is a shared file system (Level 2 shared memory) for all agents:
+- All agents can read and write files in the `.OneAgent/` directory
+- This is the standard location for cross-agent data persistence and exchange
+- When editing files, it is recommended to prioritize files in the `.OneAgent/` directory
+- `.OneAgent/` directory contents are in `.gitignore`, suitable for storing temporary and intermediate results
+- If you need to save code output as a file for other agents to use, please save it to the `.OneAgent/` directory
+
+## 背景上下文
 {context}
 """
-    
+
     # 标准参数定义 - 所有 Agent 都接收这些参数
     parameters: Dict[str, Any] = {
         "type": "object",
         "properties": {
             "instruction": {
                 "type": "string",
-                "description": "The core task instruction from the supervisor (processed by compressor)."
+                "description": "The core task instruction from the supervisor (processed by compressor).",
             },
             "context": {
                 "type": "string",
-                "description": "Compressed background context from conversation history."
+                "description": "Compressed background context from conversation history.",
             },
             "upstream_capabilities": {
                 "type": "string",
-                "description": "Tree view of capabilities available from the supervisor."
-            }
+                "description": "Tree view of capabilities available from the supervisor.",
+            },
         },
-        "required": ["instruction"]
+        "required": ["instruction"],
     }
 
-    def build_full_prompt(self, instruction: str = "", context: str = "", upstream_capabilities: str = "", language: str = "zh") -> str:
+    def build_full_prompt(
+        self,
+        instruction: str = "",
+        context: str = "",
+        upstream_capabilities: str = "",
+        language: str = "zh",
+    ) -> str:
         """
         构建完整的系统提示，组合标准模板和自定义提示。
         Build the full system prompt by combining standard template and custom prompt.
         """
-        template = self.STANDARD_SYSTEM_TEMPLATE_ZH if language == "zh" else self.STANDARD_SYSTEM_TEMPLATE_EN
-        
+        template = (
+            self.STANDARD_SYSTEM_TEMPLATE_ZH
+            if language == "zh"
+            else self.STANDARD_SYSTEM_TEMPLATE_EN
+        )
+
         # 格式化工具列表
         tools_str = ", ".join(self.allowed_tools) if self.allowed_tools else "None"
-        
+
         return template.format(
             agent_name=self.name,
             agent_description=self.description,
             instruction=instruction or "No task specified",
             upstream_capabilities=upstream_capabilities or "None provided",
             allowed_tools=tools_str,
-            context=context or "No additional context"
+            context=context or "No additional context",
         )
 
     def get_allowed_tool_schemas(self) -> List[Dict[str, Any]]:
@@ -197,20 +229,19 @@ Additionally, you may have other built-in tool capabilities (such as file operat
         Retrieve schemas for tools that this agent is allowed to use.
         """
         from src.core.registry import global_registry
-        
+
         # Split allowed tools into private vs global requests
         # Filter whitelist for global registry to avoid warnings
         global_whitelist = [
-            name for name in self.allowed_tools 
-            if name not in self._private_tools
+            name for name in self.allowed_tools if name not in self._private_tools
         ]
-        
+
         schemas = global_registry.get_all_tool_schemas(whitelist=global_whitelist)
-        
+
         # Add private tools
         for name, tool in self._private_tools.items():
             schemas.append(tool.to_function_schema())
-        
+
         return schemas
 
     def get_context_description(self) -> str:
@@ -223,8 +254,12 @@ Additionally, you may have other built-in tool capabilities (such as file operat
             base_desc += f" [Tools: {tools_str}]"
         return base_desc
 
-
-    async def execute(self, instruction: str, context: Optional[str] = None, upstream_capabilities: Optional[str] = None) -> str:
+    async def execute(
+        self,
+        instruction: str,
+        context: Optional[str] = None,
+        upstream_capabilities: Optional[str] = None,
+    ) -> str:
         """
         Agent 的默认执行逻辑：接收指令并进行处理。
         子类可以重写此方法以实现特定逻辑。
@@ -236,7 +271,8 @@ Additionally, you may have other built-in tool capabilities (such as file operat
         if context:
             print(f"[{self.name}] Received Context: {len(context)} chars")
         if upstream_capabilities:
-            print(f"[{self.name}] Received Upstream Capabilities: {len(upstream_capabilities)} chars")
-        
-        raise NotImplementedError("Agent execution logic must be implemented")
+            print(
+                f"[{self.name}] Received Upstream Capabilities: {len(upstream_capabilities)} chars"
+            )
 
+        raise NotImplementedError("Agent execution logic must be implemented")

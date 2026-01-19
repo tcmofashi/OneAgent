@@ -2,48 +2,64 @@ from typing import Optional
 from src.core.react_agent import ReactAgent
 # Tools will be loaded by the loader from the ./tools directory
 
+
 class WebAgent(ReactAgent):
     """
     Web Agent capable of browsing the internet using Playwright.
     can navigate, click, type, and read web pages.
     """
+
     name: str = "web_agent"
     description: str = "A web agent that uses Playwright to browse the internet. Can navigate to URLs, click elements, fill forms, and read page content."
     model_label: Optional[str] = None
-    model_role: str = "web_browsing" # Changed from hardcoded Qwen model to configurable role
-    
+    model_role: str = (
+        "web_browsing"  # Changed from hardcoded Qwen model to configurable role
+    )
+
     # 能力描述 - 简洁格式
-    CAPABILITIES_SUMMARY = "网页导航, 元素点击, 表单填写, 内容读取, 截图, JS执行, 文件操作(tmp目录)"
-    
+    CAPABILITIES_SUMMARY = (
+        "网页导航, 元素点击, 表单填写, 内容读取, 截图, JS执行, 文件操作(.OneAgent目录)"
+    )
+
     def get_context_description(self) -> str:
         """返回简洁的能力描述"""
         return f"{self.name} (Agent): 网页浏览代理 [{self.CAPABILITIES_SUMMARY}] [Tools: {', '.join(self.allowed_tools)}]"
-    
+
     # Tools are automatically populated by the loader from the tools/ directory
     # But we can also specify default allowed tools if we wanted to restrict it further
     # For now, we rely on the loader adding them to self.allowed_tools
-    max_iterations: int = 50  # Increased for complex web tasks; context compression handles overflow
-    
-    def build_full_prompt(self, instruction: str = "", context: str = "", upstream_capabilities: str = "", language: str = "zh") -> str:
+    max_iterations: int = (
+        50  # Increased for complex web tasks; context compression handles overflow
+    )
+
+    def build_full_prompt(
+        self,
+        instruction: str = "",
+        context: str = "",
+        upstream_capabilities: str = "",
+        language: str = "zh",
+    ) -> str:
         """
         Inject specific instructions for WebAgent regarding browser state.
         """
         # Get base prompt
-        prompt = super().build_full_prompt(instruction, context, upstream_capabilities, language)
-        
+        prompt = super().build_full_prompt(
+            instruction, context, upstream_capabilities, language
+        )
+
         # Add WebAgent specific rules
         additional_rules = """
 ## 文件操作权限 (File Operation Permissions)
 - 你可以使用 `save_to_file`, `read_file`, `list_files`, `delete_file` 工具操作文件
-- **重要**: 所有文件操作**仅限于 `tmp/` 目录**，你在其他目录没有读写权限
-- 默认保存目录: `tmp/`
+- **重要**: 所有文件操作**仅限于 `.OneAgent/` 目录**，你在其他目录没有读写权限
+- 默认保存目录: `.OneAgent/`
 - 如需保存 evaluate_script 的结果，使用 `save_to_file` 工具
 - 文件路径使用相对路径，如 "result.txt" 或 "data/output.json"
 
 ## File Operation Permissions
 - You can use `save_to_file`, `read_file`, `list_files`, `delete_file` tools for file operations
-- **IMPORTANT**: All file operations are **restricted to `tmp/` directory only** - you have NO permissions elsewhere
-- Default save directory: `tmp/`
+- **IMPORTANT**: All file operations are **restricted to `.OneAgent/` directory only** - you have NO permissions elsewhere
+- Default save directory: `.OneAgent/`
 - To save evaluate_script results, use the `save_to_file` tool
 - Use relative paths like "result.txt" or "data/output.json"
 

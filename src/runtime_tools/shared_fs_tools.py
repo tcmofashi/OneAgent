@@ -1,9 +1,11 @@
 """
-File operation tools for WebAgent.
-Provides CRUD operations for files within the .OneAgent directory only.
+Shared File System Tools for OneAgent Runtime Tools.
 
-Security: All file operations are restricted to the .OneAgent/ directory.
-The agent cannot access files outside this sandbox.
+Provides CRUD operations for files within .OneAgent directory for
+all sub-agents to share and persist data.
+
+Security: All file operations are restricted to .OneAgent directory.
+Agents cannot access files outside this sandbox.
 """
 
 import os
@@ -15,15 +17,15 @@ from src.core.capability import BaseTool
 
 
 # Resolve .OneAgent directory relative to project root
-# file_tools.py is at: src/capabilities/agents/web_agent/tools/file_tools.py
-# Need 6 .parent calls to reach project root: tools -> web_agent -> agents -> capabilities -> src -> OneAgent
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent.parent
-TMP_DIR = PROJECT_ROOT / ".OneAgent"
+# shared_fs_tools.py is at: src/runtime_tools/shared_fs_tools.py
+# Need 4 .parent calls to reach project root: runtime_tools -> src -> OneAgent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ONEAGENT_DIR = PROJECT_ROOT / ".OneAgent"
 
 
 def _ensure_oneagent_dir():
     """Ensure .OneAgent directory exists."""
-    TMP_DIR.mkdir(parents=True, exist_ok=True)
+    ONEAGENT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _validate_path(filename: str) -> tuple[bool, Path, str]:
@@ -47,11 +49,11 @@ def _validate_path(filename: str) -> tuple[bool, Path, str]:
 
     # Resolve the full path
     _ensure_oneagent_dir()
-    full_path = (TMP_DIR / filename).resolve()
+    full_path = (ONEAGENT_DIR / filename).resolve()
 
     # Security: Ensure path doesn't escape .OneAgent directory
     try:
-        full_path.relative_to(TMP_DIR.resolve())
+        full_path.relative_to(ONEAGENT_DIR.resolve())
     except ValueError:
         return (
             False,
@@ -62,16 +64,16 @@ def _validate_path(filename: str) -> tuple[bool, Path, str]:
     return True, full_path, ""
 
 
-class SaveToFileTool(BaseTool):
+class SharedSaveToFileTool(BaseTool):
     """Save content to a file in the .OneAgent directory."""
 
-    name: str = "save_to_file"
+    name: str = "shared_save_to_file"
     description: str = """Save content to a file in the .OneAgent/ directory.
 
-Use this to persist data (e.g., evaluate_script results, extracted content) to local files.
+Use this to persist data that needs to be shared between agents.
 
 IMPORTANT:
-- Files can ONLY be saved to the .OneAgent/ directory
+- Files can ONLY be saved to .OneAgent/ directory
 - Use relative paths (e.g., "result.txt", "data/output.json")
 - Subdirectories will be created automatically
 - Default mode is 'write' (overwrites existing file)
@@ -97,10 +99,7 @@ IMPORTANT:
         "required": ["filename", "content"],
     }
 
-    async def execute(self, **kwargs) -> str:
-        filename = kwargs.get("filename", "")
-        content = kwargs.get("content", "")
-        mode = kwargs.get("mode", "write")
+    async def execute(self, filename: str, content: str, mode: str = "write") -> str:
         try:
             # Validate path
             is_valid, full_path, error = _validate_path(filename)
@@ -124,14 +123,14 @@ IMPORTANT:
             return f"Error saving file: {str(e)}"
 
 
-class ReadFileTool(BaseTool):
+class SharedReadFileTool(BaseTool):
     """Read content from a file in the .OneAgent directory."""
 
-    name: str = "read_file"
+    name: str = "shared_read_file"
     description: str = """Read content from a file in the .OneAgent/ directory.
 
 IMPORTANT:
-- Files can ONLY be read from the .OneAgent/ directory
+- Files can ONLY be read from .OneAgent/ directory
 - Use relative paths (e.g., "result.txt", "data/output.json")
 - For large files, use offset and limit for pagination"""
 
@@ -200,14 +199,14 @@ IMPORTANT:
             return f"Error reading file: {str(e)}"
 
 
-class ListFilesTool(BaseTool):
-    """List files in the tmp directory."""
+class SharedListFilesTool(BaseTool):
+    """List files in the .OneAgent directory."""
 
-    name: str = "list_files"
+    name: str = "shared_list_files"
     description: str = """List files in the .OneAgent/ directory.
 
 Returns a list of all files (and optionally subdirectories) in the .OneAgent/ directory.
-Use pattern parameter for glob-style filtering (e.g., "*.txt", "data/*.json")."""
+Use the pattern parameter for glob-style filtering (e.g., "*.txt", "data/*.json")."""
 
     parameters: Dict[str, Any] = {
         "type": "object",
@@ -228,7 +227,7 @@ Use pattern parameter for glob-style filtering (e.g., "*.txt", "data/*.json").""
             _ensure_oneagent_dir()
 
             # Use glob to find matching files
-            search_pattern = TMP_DIR / pattern
+            search_pattern = ONEAGENT_DIR / pattern
             matches = list(glob_module.glob(str(search_pattern), recursive=True))
 
             # Filter and format results
@@ -240,9 +239,9 @@ Use pattern parameter for glob-style filtering (e.g., "*.txt", "data/*.json").""
                 if path.is_dir() and not include_dirs:
                     continue
 
-                # Get relative path from tmp dir
+                # Get relative path from .OneAgent dir
                 try:
-                    rel_path = path.relative_to(TMP_DIR)
+                    rel_path = path.relative_to(ONEAGENT_DIR)
                 except ValueError:
                     continue
 
@@ -269,14 +268,14 @@ Use pattern parameter for glob-style filtering (e.g., "*.txt", "data/*.json").""
             return f"Error listing files: {str(e)}"
 
 
-class DeleteFileTool(BaseTool):
-    """Delete a file from the tmp directory."""
+class SharedDeleteFileTool(BaseTool):
+    """Delete a file from the .OneAgent directory."""
 
-    name: str = "delete_file"
+    name: str = "shared_delete_file"
     description: str = """Delete a file from the .OneAgent/ directory.
 
 IMPORTANT:
-- Files can ONLY be deleted from the .OneAgent/ directory
+- Files can ONLY be deleted from .OneAgent/ directory
 - Use relative paths (e.g., "result.txt", "data/output.json")
 - Cannot delete directories (only files)"""
 

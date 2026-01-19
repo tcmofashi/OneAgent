@@ -38,17 +38,16 @@ htmlcov/
 .nox/
 .coverage
 .coverage.*
-.cache
 nosetests.xml
 coverage.xml
 *.cover
-*.py,cover
 .hypothesis/
 .pytest_cache/
 cover/
+*.py,cover
 
 # Jupyter Notebook
-.ipynb_checkpoints
+.ipynb_checkpoints/
 
 # IDEs
 .idea/
@@ -60,6 +59,7 @@ cover/
 config/config.toml
 logs/
 workspace/
+.OneAgent/
 
 # Node.js
 node_modules/
@@ -68,9 +68,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # Exceptions
-# Allow checking in the compiled bridge distribution
 !src/capabilities/agents/qwen_agent/cli_dist/dist/
-# Allow checking in gui_automation_agent lib (gelab-zero components)
 !src/capabilities/agents/gui_automation_agent/lib/
 
 # Sub-agent large media files
