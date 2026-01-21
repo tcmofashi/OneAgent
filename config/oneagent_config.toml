@@ -1,0 +1,39 @@
+[server]
+# 服务器配置
+host = "0.0.0.0"
+port = 8000
+enable_ws = true        # 是否启用 WebSocket
+enable_http = true      # 是否启用 HTTP
+max_connections = 100   # 最大并发连接数
+
+[websocket]
+# WebSocket 配置
+heartbeat_interval = 30    # 心跳间隔（秒）
+heartbeat_timeout = 60    # 心跳超时（秒）
+message_max_size = 1048576  # 最大消息大小（1MB）
+reconnect_max_attempts = 3 # 最大重连次数
+
+[http]
+# HTTP 配置
+timeout = 120              # 默认调用超时（秒）
+max_request_size = 5242880 # 最大请求大小（5MB）
+stream_chunk_size = 4096  # 流式输出块大小（4KB）
+
+[nested]
+# 嵌套 OneAgent 配置
+max_nesting_depth = 5      # 最大嵌套深度
+default_timeout = 60       # 嵌套调用默认超时（秒）
+enable_capability_cache = true  # 是否启用能力树缓存
+cache_ttl = 3600           # 缓存过期时间（秒）
+
+[session]
+# 会话管理配置
+session_timeout = 1800     # 会话超时时间（30分钟）
+cleanup_interval = 60      # 清理间隔（秒）
+max_sessions = 10000      # 最大会话数
+
+[protocol]
+# 协议配置
+protocol_version = "1.0"
+encoding = "UTF-8"
+enable_compression = false # 是否启用压缩（预留）

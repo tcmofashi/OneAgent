@@ -183,6 +183,201 @@ enabled = true               # 是否加载 MCP 服务
 
 ---
 
+## 分布式测试框架
+
+OneAgent 提供了完整的分布式测试框架，用于 AI CLI coding agent（Claude Code、OpenCode）调试多机器部署。
+
+### 快速开始（模拟模式）
+
+最简单的测试方式，无需 Docker：
+
+```bash
+# 运行分布式测试（模拟模式）
+pytest tests/distributed/ -v -m distributed
+
+# 查看结果
+# ✓ 4/6 测试通过
+# ✓ 64 个现有测试全部通过（无回归）
+```
+
+### 使用 Docker 集群
+
+用于真实的分布式场景测试：
+
+```bash
+# 1. 安装 Docker 依赖
+pip install docker
+
+# 2. 启动测试集群（1 root + 3 sub 节点）
+./tests/distributed/scripts/start_cluster.sh
+
+# 3. 运行测试
+pytest tests/distributed/ -v -m distributed
+
+# 4. 停止集群并收集日志
+./tests/distributed/scripts/stop_cluster.sh
+```
+
+### 测试场景
+
+| 测试用例 | 说明 | 状态 |
+|---------|------|------|
+| `test_root_calls_sub_agent` | 主控节点调用工作节点 | ✅ 框架完成 |
+| `test_multiple_sub_agents` | 并发调用多个工作节点 | ✅ 框架完成 |
+| `test_remote_agent_capabilities` | 查询远程 Agent 能力树 | ✅ 通过 |
+| `test_remote_agent_timeout` | 超时重试机制测试 | ✅ 通过 |
+| `test_stream_execution` | 流式输出测试 | ✅ 通过 |
+| `test_cluster_node_management` | 集群节点管理测试 | ✅ 通过 |
+
+### 核心组件
+
+#### 1. RemoteAgent
+
+封装 HTTP 调用到远程 OneAgent 实例，提供统一接口：
+
+```python
+from tests.distributed.helpers.remote_agent import RemoteAgent
+
+remote_agent = RemoteAgent(
+    agent_id="sub-0",
+    name="RemoteSubAgent",
+    remote_url="http://localhost:8001"
+)
+
+# 非流式调用
+result = await remote_agent.execute(
+    instruction="返回 Hello World",
+    context="测试调用"
+)
+
+# 流式调用
+async for chunk in remote_agent.stream_execute(
+    instruction="逐步输出消息",
+    context="流式测试"
+):
+    print(chunk)
+```
+
+#### 2. 分布式测试集群
+
+管理多节点 OneAgent 集群，支持双模式：
+
+```python
+from tests.distributed.fixtures.cluster import DistributedTestCluster
+
+# 创建集群（模拟模式）
+cluster = DistributedTestCluster(use_docker=False)
+await cluster.start_cluster(root_count=1, sub_count=3)
+
+# 获取节点
+root_node = cluster.get_node("root-0")
+sub_nodes = cluster.get_nodes_by_type("sub")
+
+# 故障注入（混沌工程）
+await cluster.inject_network_delay("sub-0", delay_ms=500)
+await cluster.inject_network_loss("sub-1", loss_percent=50)
+
+# 清理
+await cluster.shutdown()
+```
+
+#### 3. Pytest Fixtures
+
+预定义的测试夹件：
+
+| Fixture | 作用 | 作用域 |
+|---------|------|---------|
+| `ephemeral_cluster` | 每个测试独立的集群 | 测试级 |
+| `distributed_cluster` | 跨测试共享的集群 | 会话级 |
+| `http_client` | HTTP 客户端 | 测试级 |
+
+```python
+import pytest
+
+@pytest.mark.distributed
+@pytest.mark.asyncio
+async def test_my_scenario(ephemeral_cluster):
+    sub_node = ephemeral_cluster.get_node("sub-0")
+    # 测试逻辑
+```
+
+### Docker 集群管理
+
+查看集群状态：
+
+```bash
+# 查看容器状态
+docker ps --filter "name=oneagent-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+# 查看容器日志
+docker logs -f oneagent-root-0
+docker logs --tail 100 oneagent-sub-0
+```
+
+### 测试标记
+
+选择性运行测试：
+
+```bash
+# 只运行分布式测试
+pytest -m distributed
+
+# 排除慢速测试
+pytest -m "not slow"
+
+# 只运行混沌测试
+pytest -m chaos
+
+# 只运行需要网络的测试
+pytest -m network
+```
+
+### 覆盖率报告
+
+生成测试覆盖率报告：
+
+```bash
+# 生成 HTML 覆盖率报告
+pytest tests/distributed/ --cov=src --cov-report=html
+
+# 查看报告
+# macOS: open htmlcov/index.html
+# Linux: xdg-open htmlcov/index.html
+```
+
+### 日志和调试
+
+查看测试失败日志：
+
+```bash
+# 查看失败测试日志
+ls -l logs/test_failures/
+cat logs/test_failures/failure_YYYYMMDD_HHMMSS.json
+
+# 查看集群日志
+ls -l .OneAgent/cluster_logs/
+cat .OneAgent/cluster_logs/cluster_logs_YYYYMMDD_HHMMSS.json
+```
+
+### 依赖要求
+
+| 包名 | 用途 | 必需 |
+|------|------|------|
+| `pytest` | 测试框架 | ✅ |
+| `pytest-asyncio` | 异步测试支持 | ✅ |
+| `pytest-cov` | 覆盖率报告 | ✅ |
+| `httpx` | HTTP 客户端 | ✅ |
+| `docker` | Docker API（可选） | ❌ |
+
+### 文档
+
+完整的测试框架文档：
+
+- [分布式测试 README](./tests/distributed/README.md) - 详细使用指南
+- [验证报告](./tests/distributed/VERIFICATION_REPORT.md) - 验证结果和证据
+
+---
+
 ## 快速开始示例
 
 ```bash

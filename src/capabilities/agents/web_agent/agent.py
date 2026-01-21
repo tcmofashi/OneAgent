@@ -1,5 +1,6 @@
-from typing import Optional
+from typing import Optional, List
 from src.core.react_agent import ReactAgent
+from src.core.capability import AgentPromptContext
 # Tools will be loaded by the loader from the ./tools directory
 
 
@@ -32,47 +33,46 @@ class WebAgent(ReactAgent):
         50  # Increased for complex web tasks; context compression handles overflow
     )
 
-    def build_full_prompt(
-        self,
-        instruction: str = "",
-        context: str = "",
-        upstream_capabilities: str = "",
-        language: str = "zh",
-    ) -> str:
+    def get_custom_sections(self, ctx: "AgentPromptContext") -> List[str]:
         """
-        Inject specific instructions for WebAgent regarding browser state.
+        WebAgent 自定义段落。
+
+        追加 WebAgent 特定规则：
+        - 文件操作权限
+        - 网页保持逻辑
         """
-        # Get base prompt
-        prompt = super().build_full_prompt(
-            instruction, context, upstream_capabilities, language
+        sections = []
+
+        if ctx.language == "zh":
+            sections.append(f"## 文件操作权限")
+        else:
+            sections.append("## File Operation Permissions")
+        sections.append(
+            f"- 你可以使用 `save_to_file`, `read_file`, `list_files`, `delete_file` 工具操作文件"
+        )
+        sections.append(
+            f"- **重要**: 所有文件操作**仅限于 `.OneAgent/` 目录**，你在其他目录没有读写权限"
+        )
+        sections.append(f"- 默认保存目录: `.OneAgent/`")
+        sections.append(f"- 如需保存 evaluate_script 的结果，使用 `save_to_file` 工具")
+        sections.append(
+            f'- 文件路径使用相对路径，如 "result.txt" 或 "data/output.json"'
+        )
+        sections.append("")
+
+        if ctx.language == "zh":
+            sections.append(f"## 网页保持逻辑")
+        else:
+            sections.append("## Web Page Persistence Logic")
+        sections.append(
+            f"- 默认情况下，任务结束（SUCCESS/FAILURE）后浏览器状态可能会重置或关闭。"
+        )
+        sections.append(
+            f'- **如果你希望保持网页/浏览器打开**（例如为了让用户查看结果，或进行后续交互），你必须使用 `report_status(status="INTERRUPTED", message="...")`。'
+        )
+        sections.append(f"- 在 message 中明确说明维持浏览器打开的原因。")
+        sections.append(
+            f'- 如果任务完全完成且不需要用户查看网页，使用 `status="SUCCESS"`。'
         )
 
-        # Add WebAgent specific rules
-        additional_rules = """
-## 文件操作权限 (File Operation Permissions)
-- 你可以使用 `save_to_file`, `read_file`, `list_files`, `delete_file` 工具操作文件
-- **重要**: 所有文件操作**仅限于 `.OneAgent/` 目录**，你在其他目录没有读写权限
-- 默认保存目录: `.OneAgent/`
-- 如需保存 evaluate_script 的结果，使用 `save_to_file` 工具
-- 文件路径使用相对路径，如 "result.txt" 或 "data/output.json"
-
-## File Operation Permissions
-- You can use `save_to_file`, `read_file`, `list_files`, `delete_file` tools for file operations
-- **IMPORTANT**: All file operations are **restricted to `.OneAgent/` directory only** - you have NO permissions elsewhere
-- Default save directory: `.OneAgent/`
-- To save evaluate_script results, use the `save_to_file` tool
-- Use relative paths like "result.txt" or "data/output.json"
-
-## 网页保持逻辑 (Web Page Persistence Logic)
-- 默认情况下，任务结束（SUCCESS/FAILURE）后浏览器状态可能会重置或关闭。
-- **如果你希望保持网页/浏览器打开**（例如为了让用户查看结果，或进行后续交互），你必须使用 `report_status(status="INTERRUPTED", message="...")`。
-- 在 message 中明确说明维持浏览器打开的原因。
-- 如果任务完全完成且不需要用户查看网页，使用 `status="SUCCESS"`。
-
-## Web Page Persistence Logic
-- By default, the browser state may be reset or closed after task completion (SUCCESS/FAILURE).
-- **If you want to keep the webpage/browser OPEN** (e.g., for user inspection or follow-up), you MUST use `report_status(status="INTERRUPTED", message="...")`.
-- Explicitly state the reason for keeping the browser open in the message.
-- If the task is fully complete and user inspection is not needed, use `status="SUCCESS"`.
-"""
-        return prompt + additional_rules
+        return sections

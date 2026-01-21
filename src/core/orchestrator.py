@@ -349,6 +349,32 @@ class Orchestrator:
                                         f"\n[Orchestrator] Intercepting Agent Call: {function_name}..."
                                     )
 
+                                    agent_task_recorded = (
+                                        function_name in self.agent_tasks
+                                    )
+                                    if not agent_task_recorded:
+                                        error_msg = f"错误：在调用 {function_name} 之前，你必须先使用 `update_agent_tasks` 工具将任务记录在案。\n\n示例格式：\n- [ ] {function_name}: {instruction[:50]}...\n\n这样做是为了确保所有子任务都有明确的计划和跟踪。"
+                                        logger.log(
+                                            "AGENT_CALL_WITHOUT_TASK",
+                                            {
+                                                "agent": function_name,
+                                                "instruction": instruction,
+                                            },
+                                            "Orchestrator",
+                                            self.session.trace_id,
+                                            span_id,
+                                        )
+                                        yield {"type": "error", "content": error_msg}
+
+                                        self.session.add_history(
+                                            {
+                                                "role": "tool",
+                                                "tool_call_id": tool_call.id,
+                                                "content": error_msg,
+                                            }
+                                        )
+                                        continue
+
                                     # Get Upstream Tools and Compress
                                     upstream_view = (
                                         global_registry.get_capabilities_tree_string()
@@ -383,6 +409,20 @@ class Orchestrator:
                                     function_args["context"] = compressed_context
                                     function_args["upstream_capabilities"] = (
                                         upstream_view  # 传递上级能力树
+                                    )
+
+                                    # Debug: Log parameter passing
+                                    from src.core.capability import AgentPromptContext
+
+                                    ctx = AgentPromptContext.from_legacy_params(
+                                        instruction=new_instruction or instruction,
+                                        context=compressed_context or "",
+                                        upstream_capabilities=upstream_view,
+                                        agent_name=function_name,
+                                        agent_description=capability.description,
+                                    )
+                                    print(
+                                        f"[Orchestrator] 参数传递调试信息:\n{ctx.get_summary()}"
                                     )
 
                                     # Log Interception
